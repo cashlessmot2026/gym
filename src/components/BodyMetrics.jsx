@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Save, Scale, Ruler, Flame, Droplets, HeartPulse, Percent, Trash2 } from 'lucide-react'
 import { supabase, q } from '../lib/supabase'
 import { computeAll, bmiCategory, bodyFatCategory } from '../lib/fitness'
+import { refreshScore } from '../lib/ranking'
 import { ACTIVITY, calcAge, fmtDate, today } from '../lib/constants'
 import { Input, Select, Stat, useToast, Spinner, Empty } from './ui'
 
@@ -34,6 +35,7 @@ export default function BodyMetrics({ member, readOnly, onSaved }) {
       await q(supabase.from('body_metrics').insert(row))
       await q(supabase.from('members').update({ activity_level: row.activity_level, sex: row.sex }).eq('id', member.id))
       toast('Medidas guardadas', 'success')
+      refreshScore(member).catch(() => {}) // las medidas cuentan para el ranking
       load(); onSaved?.()
     } catch (e) { toast(e.message, 'error') } finally { setBusy(false) }
   }

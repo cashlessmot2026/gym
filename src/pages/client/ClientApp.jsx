@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Dumbbell, LineChart, Scale, Bot, Library, User, KeyRound, Pencil, CalendarClock } from 'lucide-react'
+import { Dumbbell, LineChart, Scale, Bot, Library, User, KeyRound, Pencil, CalendarClock, Home, Trophy, Swords, IdCard } from 'lucide-react'
 import { supabase, q } from '../../lib/supabase'
 import { getSession, setSession, clearSession, setPassword } from '../../lib/auth'
 import { getStatus, getTrainingTypes } from '../../lib/data'
@@ -17,20 +17,30 @@ import Onboarding from './Onboarding'
 import Training from './Training'
 import Classes from './Classes'
 import { memberSchedules } from '../../lib/classes'
+import { syncHealth } from '../../lib/activities'
+import Feed from './Feed'
+import SocialProfile from './SocialProfile'
+import Ranking from './Ranking'
+import Challenges from './Challenges'
 
+// Móvil: los 4 primeros van abajo y el resto en "Más"
 const NAV = [
+  { id: 'feed', label: 'Inicio', icon: Home },
   { id: 'train', label: 'Entrenar', icon: Dumbbell },
+  { id: 'ranking', label: 'Ranking', icon: Trophy },
+  { id: 'me', label: 'Mi perfil', short: 'Perfil', icon: User },
+  { id: 'challenges', label: 'Retos', icon: Swords },
   { id: 'progress', label: 'Progreso', icon: LineChart },
   { id: 'body', label: 'Medidas e IMC', short: 'Medidas', icon: Scale },
   { id: 'nutri', label: 'Nutricionista IA', short: 'Nutrición', icon: Bot },
   { id: 'library', label: 'Ejercicios', icon: Library },
-  { id: 'profile', label: 'Mi perfil', short: 'Perfil', icon: User }
+  { id: 'profile', label: 'Mi cuenta', short: 'Cuenta', icon: IdCard }
 ]
 
 export default function ClientApp() {
   const toast = useToast()
   const [me, setMe] = useState(() => getSession('member'))
-  const [tab, setTab] = useState('train')
+  const [tab, setTab] = useState('feed')
   const [types, setTypes] = useState(null)
   const [status, setStatus] = useState(null)
 
@@ -66,13 +76,25 @@ function ClientMain({ me, status, types, tab, setTab, saveProfile, onLogout }) {
   // Pestaña "Clases": aparece si eligió Box (u otra modalidad con clases) o si está en un grupo
   const [hasClasses, setHasClasses] = useState(false)
   useEffect(() => { memberSchedules(me).then((r) => setHasClasses(r.schedules.length > 0)).catch(() => {}) }, [me.id, (me.training_modes || []).join()])
-  const nav = hasClasses ? [NAV[0], { id: 'classes', label: 'Clases', icon: CalendarClock }, ...NAV.slice(1)] : NAV
+  const nav = hasClasses ? [...NAV.slice(0, 5), { id: 'classes', label: 'Clases', icon: CalendarClock }, ...NAV.slice(5)] : NAV
+  // Perfil de otro miembro abierto desde el feed, el ranking o los retos
+  const [viewing, setViewing] = useState(null)
+  const [rival, setRival] = useState(null)
+  const go = (t) => { setViewing(null); setTab(t); window.scrollTo({ top: 0 }) }
+  const openProfile = (id) => { if (id === me.id) go('me'); else { setViewing(id); window.scrollTo({ top: 0 }) } }
+  const challenge = (m) => { setRival(m); go('challenges') }
+
+  // Pulsera: al abrir la app se sincroniza Health Connect (si ya dio permiso)
+  const toast = useToast()
+  useEffect(() => {
+    syncHealth(me).then((n) => n && toast(`⌚ ${n} actividad${n > 1 ? 'es' : ''} nueva${n > 1 ? 's' : ''} de tu pulsera`, 'success')).catch((e) => console.warn('[health]', e))
+  }, [me.id])
   // Abre el destino de una notificación: pestaña interna (?tab=...) o enlace externo
   const openUrl = (url) => {
     if (!url) return
     if (/^https?:/i.test(url) && !url.startsWith(location.origin)) { window.open(url, '_blank', 'noopener'); return }
     const t = new URL(url, location.origin).searchParams.get('tab')
-    if (t && (t === 'classes' || NAV.some((n) => n.id === t))) setTab(t)
+    if (t && (t === 'classes' || NAV.some((n) => n.id === t))) go(t)
   }
   const inbox = usePushInbox(me, openUrl)
   useEffect(() => { openUrl(location.href) }, [])
@@ -80,8 +102,15 @@ function ClientMain({ me, status, types, tab, setTab, saveProfile, onLogout }) {
   const first = me.full_name.split(' ')[0]
   const bell = <NotificationBell inbox={inbox} onOpen={openUrl} />
   return (
-    <Shell sub="MI ENTRENAMIENTO" nav={nav} value={tab} onChange={setTab} user={me} onLogout={onLogout}>
+    <Shell sub="MI ENTRENAMIENTO" nav={nav} value={tab} onChange={go} user={me} onLogout={onLogout}>
       <PushBanner n={inbox.banner} onClose={inbox.closeBanner} onOpen={openUrl} />
+      {viewing
+        ? <SocialProfile key={viewing} me={me} memberId={viewing} onBack={() => setViewing(null)} onOpenProfile={openProfile} onChallenge={challenge} bell={bell} />
+        : <>
+      {tab === 'feed' && <Feed me={me} onOpenProfile={openProfile} onGo={go} bell={bell} />}
+      {tab === 'ranking' && <Ranking me={me} onOpenProfile={openProfile} bell={bell} />}
+      {tab === 'challenges' && <Challenges me={me} preset={rival} onClearPreset={() => setRival(null)} onOpenProfile={openProfile} bell={bell} />}
+      {tab === 'me' && <SocialProfile key="me" me={me} memberId={me.id} onOpenProfile={openProfile} onChallenge={challenge} bell={bell} />}
       {tab === 'train' && <><PageTitle a="HOLA," b={first.toUpperCase()}><WatchPanel compact />{bell}</PageTitle><div className="mb"><PushOptIn member={me} compact /></div><Training member={me} status={status} types={types} /></>}
       {tab === 'classes' && <><PageTitle a="MIS" b="CLASES">{bell}</PageTitle><Classes member={me} /></>}
       {tab === 'progress' && <><PageTitle a="MI" b="PROGRESO">{bell}</PageTitle><MemberAnalytics memberId={me.id} /></>}
@@ -89,6 +118,7 @@ function ClientMain({ me, status, types, tab, setTab, saveProfile, onLogout }) {
       {tab === 'nutri' && <><PageTitle a="NUTRICIONISTA" b="IA">{bell}</PageTitle><NutritionAI member={me} /></>}
       {tab === 'library' && <><PageTitle a="EJERCICIOS" b="POR MODALIDAD">{bell}</PageTitle><ExerciseBrowser types={types} initialType={me.training_modes?.[0]} /></>}
       {tab === 'profile' && <Profile me={me} status={status} types={types} onSave={saveProfile} bell={bell} />}
+        </>}
     </Shell>
   )
 }
@@ -108,7 +138,7 @@ function Profile({ me, status, types, onSave, bell }) {
 
   return (
     <>
-      <PageTitle a="MI" b="PERFIL">
+      <PageTitle a="MI" b="CUENTA">
         {bell}
         <button className="btn" onClick={() => setPw({ a: '', b: '' })}><KeyRound size={16} /> Contraseña</button>
         <button className="btn primary" onClick={() => setEdit(true)}><Pencil size={16} /> Objetivo y modalidades</button>

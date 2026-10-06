@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Play, Pause, SkipForward, CheckCircle2, X, HeartPulse, Watch, CirclePlay } from 'lucide-react'
-import { fmtTime } from '../../lib/constants'
+import { fmtTime, calcAge } from '../../lib/constants'
+import { zoneOf, hrMax } from '../../lib/hr'
 import { enableMediaControls, disableMediaControls, updateMediaTitle } from '../../lib/watch'
 import { listenRemoteButton } from '../../lib/remote'
 import { videoSearch } from '../../lib/exerciseLibrary'
@@ -23,7 +24,7 @@ function beep(freq = 880, ms = 140) {
  * Botón del smartwatch: detiene el contador de trabajo (serie completada) o salta el descanso.
  * Controles multimedia del reloj: Pausa / Play / Siguiente.
  */
-export default function WorkoutPlayer({ item, onFinish, onClose }) {
+export default function WorkoutPlayer({ item, member, onFinish, onClose }) {
   const ex = item.exercise
   const watch = useWatch()
   const [phase, setPhase] = useState('ready')
@@ -170,7 +171,8 @@ export default function WorkoutPlayer({ item, onFinish, onClose }) {
             </span>
             <div className="timer-num">{phase === 'ready' ? fmtTime(item.work_sec) : phase === 'done' ? '✔' : fmtTime(Math.ceil(remaining))}</div>
             <div className="muted small">Serie {Math.min(set, item.sets)} de {item.sets}</div>
-            {watch.hr && <div className="hr-live small mt"><HeartPulse size={14} /> {watch.hr} lpm</div>}
+            {watch.hr && <div className="hr-live small mt"><HeartPulse size={14} /> {watch.hr} lpm
+              {(() => { const z = zoneOf(watch.hr, hrMax(calcAge(member?.birthdate))); return z && <span className="badge" style={{ background: z.color, color: '#000', borderColor: z.color }}>{z.label}</span> })()}</div>}
           </div>
         </div>
 

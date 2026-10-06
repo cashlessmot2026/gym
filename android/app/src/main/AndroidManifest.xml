@@ -58,4 +58,9 @@
     <!-- Alertas de clase exactas (10 min antes) y reprogramación tras reiniciar el teléfono -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Health Connect: entrenamientos de Mi Fitness, Zepp, Garmin, Samsung Health... (lectura de más de 30 días) -->
+    <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_HISTORY" />
+    <queries>
+        <package android:name="com.google.android.apps.healthdata" />
+    </queries>
 </manifest>

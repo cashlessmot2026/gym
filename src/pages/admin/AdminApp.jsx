@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, AreaChart, Area } from 'recharts'
-import { LayoutDashboard, Users, CreditCard, Tags, UserCog, Dumbbell, CalendarCheck, Plus, Search, RefreshCw, Pencil, Trash2, AlertTriangle, DollarSign, UserCheck, Clock, KeyRound, Power, Megaphone, CalendarClock } from 'lucide-react'
+import { LayoutDashboard, Users, CreditCard, Tags, UserCog, Dumbbell, CalendarCheck, Plus, Search, RefreshCw, Pencil, Trash2, AlertTriangle, DollarSign, UserCheck, Clock, KeyRound, Power, Megaphone, CalendarClock, Images } from 'lucide-react'
 import { supabase, q } from '../../lib/supabase'
 import { getSession, setSession, clearSession, setPassword } from '../../lib/auth'
 import { getPlans, getTrainingTypes } from '../../lib/data'
@@ -11,6 +11,7 @@ import { Shell, PageTitle, Stat, Loading, Empty, Modal, Input, Select, Field, Av
 import { tip } from '../../components/Analytics'
 import MemberForm from './MemberForm'
 import Promotions from './Promotions'
+import Community from './Community'
 import ClassesAdmin, { TodayClasses } from './Classes'
 import { ProofPicker, ProofLink, PendingProofs } from '../../components/Payments'
 
@@ -21,6 +22,7 @@ const NAV = [
   { id: 'classes', label: 'Clases', icon: CalendarClock },
   { id: 'attendance', label: 'Asistencia', icon: CalendarCheck },
   { id: 'promos', label: 'Promociones push', short: 'Promos', icon: Megaphone },
+  { id: 'community', label: 'Comunidad', icon: Images },
   { id: 'plans', label: 'Planes', icon: Tags },
   { id: 'staff', label: 'Coaches y personal', short: 'Personal', icon: UserCog },
   { id: 'types', label: 'Modalidades', icon: Dumbbell }
@@ -54,6 +56,7 @@ export default function AdminApp() {
           {tab === 'classes' && <ClassesAdmin types={data.types} />}
           {tab === 'attendance' && <Attendance />}
           {tab === 'promos' && <Promotions data={data} me={me} />}
+          {tab === 'community' && <Community />}
           {tab === 'plans' && <Plans data={data} reload={load} />}
           {tab === 'staff' && <Staff data={data} reload={load} me={me} />}
           {tab === 'types' && <Types data={data} reload={load} />}

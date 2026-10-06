@@ -5,7 +5,10 @@ import { supabase, q } from '../../lib/supabase'
 import { getMemberAssignments } from '../../lib/data'
 import { WEEKDAYS, WEEKDAYS_SHORT, fmtTime, today } from '../../lib/constants'
 import { kcalFromMet } from '../../lib/fitness'
-import { hrStats } from '../../lib/watch'
+import { watchState } from '../../lib/watch'
+import { analyzeHr, hrProfile } from '../../lib/hr'
+import { afterSync } from '../../lib/activities'
+import { ZoneBar } from '../../components/Activities'
 import { Loading, Empty, Modal, Stat, StatusBadge, useToast } from '../../components/ui'
 import { CHART, tip } from '../../components/Analytics'
 import WorkoutPlayer from './WorkoutPlayer'
@@ -77,13 +80,15 @@ export default function Training({ member, status, types }) {
     const active = logs.reduce((s, l) => s + (l.set_times || []).reduce((a, x) => a + x.work, 0), 0)
     const metOf = (name) => types.find((t) => t.name === items.find((i) => i.exercise?.name === name)?.exercise?.training_type)?.met || 5
     const kcal = logs.reduce((s, l) => s + kcalFromMet(metOf(l.exercise_name), bodyKg, (l.set_times || []).reduce((a, x) => a + x.work + x.rest, 0)), 0)
-    const hr = hrStats(started)
+    // Pulsera en vivo: pulso medio/máx, minutos por zona y calorías por pulso (Keytel)
+    const hr = analyzeHr(watchState.hrSamples.filter((x) => x.t >= started), hrProfile(member, bodyKg)) || {}
     const upd = {
       ended_at: new Date().toISOString(), total_sec: total, active_sec: active, exercises_done: logs.filter((l) => l.completed).length,
       sets_done: logs.reduce((s, l) => s + (l.sets_done || 0), 0), volume_kg: logs.reduce((s, l) => s + (l.weight || 0) * (l.reps_done || 0) * (l.sets_done || 0), 0),
-      calories: kcal, avg_hr: hr.avg, max_hr: hr.max
+      calories: hr.kcal > 0 ? hr.kcal : kcal, avg_hr: hr.avg ?? null, max_hr: hr.max ?? null, hr_zones: hr.zones ?? null, hr_kcal: hr.kcal || null
     }
     await q(supabase.from('workout_sessions').update(upd).eq('id', session.id))
+    afterSync(member)
     setSummary({ ...session, ...upd, logs })
     setSession(null); setLogs([])
   }
@@ -141,7 +146,7 @@ export default function Training({ member, status, types }) {
         </div>
       ))}
 
-      {playing && <WorkoutPlayer item={playing} onFinish={(r) => onFinishExercise(playing, r)} onClose={() => setPlaying(null)} />}
+      {playing && <WorkoutPlayer item={playing} member={member} onFinish={(r) => onFinishExercise(playing, r)} onClose={() => setPlaying(null)} />}
       {summary && <DaySummary s={summary} onClose={() => setSummary(null)} />}
     </div>
   )
@@ -161,9 +166,10 @@ function DaySummary({ s, onClose }) {
         <Stat label="Duración total" value={fmtTime(s.total_sec)} icon={Clock} y />
         <Stat label="Tiempo activo" value={fmtTime(s.active_sec)} icon={Dumbbell} sub={`densidad ${density}%`} />
         <Stat label="Series" value={s.sets_done} icon={Layers} sub={`${s.exercises_done} ejercicios completos`} />
-        <Stat label="Calorías" value={Math.round(s.calories)} icon={Flame} sub={s.volume_kg ? `Volumen ${Math.round(s.volume_kg)} kg` : 'estimadas (MET)'} />
+        <Stat label="Calorías" value={Math.round(s.calories)} icon={Flame} sub={s.hr_kcal ? 'por pulso (pulsera)' : s.volume_kg ? `Volumen ${Math.round(s.volume_kg)} kg` : 'estimadas (MET)'} />
       </div>
       {s.avg_hr && <div className="row mt"><span className="hr-live"><HeartPulse size={16} /> FC media {s.avg_hr} lpm · máx {s.max_hr} lpm</span></div>}
+      {s.hr_zones && <div className="card mt"><h3>Tiempo en zonas de pulso</h3><ZoneBar zones={s.hr_zones} /></div>}
       <div className="grid g2 mt">
         <div className="card"><h3>Tiempo por ejercicio (s)</h3>
           <ResponsiveContainer width="100%" height={240}>
