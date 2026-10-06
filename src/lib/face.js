@@ -10,9 +10,16 @@ export function loadFace() {
   if (!loading) {
     loading = (async () => {
       const lib = await import('@vladmandic/face-api')
-      try { await lib.tf.setBackend('webgl') } catch { /* usa el backend por defecto */ }
-      // Reutiliza los shaders aunque cambie el tamaño de la imagen (evita recompilaciones lentas)
+      // Motor: WebAssembly (CPU con SIMD) es estable en PC, Android, iPhone y el APK, y no tiene
+      // la espera de compilar gráficos de WebGL (que en algunos equipos se queda bloqueada).
+      // Si WASM no está disponible se usa WebGL y, en último caso, CPU.
+      const base = import.meta.env.BASE_URL || '/'
+      try { lib.tf.setWasmPaths(new URL(base + 'tfjs-wasm/', location.href).href) } catch { /* sin wasm */ }
       try { lib.tf.env().set('WEBGL_USE_SHAPES_UNIFORMS', true) } catch { /* flag no disponible */ }
+      let ok = false
+      for (const b of ['wasm', 'webgl', 'cpu']) {
+        try { ok = await Promise.race([lib.tf.setBackend(b), sleep(8000).then(() => false)]); if (ok) break } catch { /* siguiente */ }
+      }
       await lib.tf.ready()
       const url = (import.meta.env.BASE_URL || '/') + 'models'
       await Promise.all([
@@ -23,9 +30,11 @@ export function loadFace() {
       // Calentamiento: la 1ª inferencia compila los shaders de WebGL (lenta). Se hace aquí,
       // en segundo plano, para que la cámara responda al instante cuando se abra.
       try {
-        const c = document.createElement('canvas'); c.width = c.height = 160
-        const g = c.getContext('2d'); g.fillStyle = '#888'; g.fillRect(0, 0, 160, 160)
-        await lib.detectSingleFace(c, new lib.TinyFaceDetectorOptions({ inputSize: 160 })).withFaceLandmarks().withFaceDescriptor()
+        const c = document.createElement('canvas'); c.width = 640; c.height = 480
+        const g = c.getContext('2d'); g.fillStyle = '#777'; g.fillRect(0, 0, 640, 480)
+        await lib.detectSingleFace(c, new lib.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.1 })).withFaceLandmarks().withFaceDescriptor()
+        // también la red de reconocimiento (150x150) para que la 1ª captura real sea instantánea
+        await lib.nets.faceRecognitionNet.computeFaceDescriptor(c)
       } catch { /* sin rostro: sólo calienta */ }
       fa = lib
       return lib
@@ -36,6 +45,11 @@ export function loadFace() {
 
 /** Precarga los modelos en segundo plano (llamar al abrir pantallas que usarán la cámara). */
 export const preloadFace = () => { loadFace().catch(() => {}) }
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+/** Motor de IA en uso (para diagnóstico en pantalla). */
+export const faceBackend = () => fa?.tf.getBackend?.() || '—'
 
 const options = (lib, scoreThreshold = 0.5, inputSize = 320) => new lib.TinyFaceDetectorOptions({ inputSize, scoreThreshold })
 

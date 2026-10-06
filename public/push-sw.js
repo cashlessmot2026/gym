@@ -23,7 +23,10 @@ self.addEventListener('push', (event) => {
       image: data.image || undefined,
       tag: data.id || undefined,
       renotify: true,
-      vibrate: [120, 60, 120],
+      // Alertas de clase: quedan fijas hasta tocarlas y vibran fuerte
+      requireInteraction: !!data.urgent,
+      silent: false,
+      vibrate: data.urgent ? [600, 200, 600, 200, 900, 200, 900, 200, 900] : [120, 60, 120],
       data: { url: data.url || '/', id: data.id },
       actions: [{ action: 'open', title: 'Ver' }]
     })

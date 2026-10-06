@@ -42,6 +42,21 @@ Cómo funciona:
 - Si `send-push` no está desplegada, la campaña igual aparece dentro de la app.
 - En iPhone, el push web solo funciona con la app instalada en la pantalla de inicio (iOS 16.4+).
 
+### 2c. Clases grupales, pagos y nutricionista gratis
+1. Ejecuta en orden `supabase/03_pagos_cop.sql` y `supabase/04_clases.sql`. El 04 activa `pg_cron` para revisar cada minuto qué clase empieza en 10 minutos.
+2. Despliega las funciones:
+   ```bash
+   supabase functions deploy send-push class-reminders nutri-ai --no-verify-jwt
+   ```
+3. Configura los secretos (Dashboard > Edge Functions > Secrets):
+   - `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`: claves de las notificaciones web (están en `.env.vapid.json`).
+   - `GEMINI_API_KEY`: nutricionista con IA **gratis**. Créala en https://aistudio.google.com/apikey.
+   - Opcionales: `GYM_TIMEZONE` (por defecto `America/Bogota`) y `CLASS_REMINDER_MINUTES` (por defecto `10`).
+
+**Notificaciones en la app Android: sin Firebase.** Las alertas de clase se programan en el propio teléfono, con canal de alarma, 10 minutos antes. Una tarea en segundo plano consulta Supabase cada ~15 min para traer las promociones.
+
+**Nutricionista IA:** usa Gemini (gratis) si está configurado. Si no, una IA gratuita sin clave, a la que se envían datos anónimos. Como último respaldo, guías oficiales (ISSN, ACSM, COI, OMS, ICBF). Las novedades científicas se descargan cada lunes de PubMed (`.github/workflows/nutrition-updates.yml`).
+
 ### 3. Ejecutar
 ```bash
 npm install

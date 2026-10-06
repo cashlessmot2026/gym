@@ -31,6 +31,18 @@ export default function MemberForm({ member, plans, coaches, onClose, onSaved })
     if (member) q(supabase.from('members').select('face_descriptors, photo').eq('id', member.id)).then(([r]) => r && setF((x) => ({ ...x, ...r })))
   }, [member])
 
+  // Cliente existente: el rostro se guarda de inmediato (no depende de pulsar "Guardar")
+  const saveFace = async ({ descriptors, photo }) => {
+    setF((x) => ({ ...x, face_descriptors: descriptors, photo: photo || x.photo, faceSaved: !!member?.id }))
+    if (member?.id) {
+      try {
+        await q(supabase.from('members').update({ face_descriptors: descriptors, ...(photo ? { photo } : {}) }).eq('id', member.id))
+        toast('Rostro registrado y guardado', 'success')
+      } catch (e) { toast('No se pudo guardar el rostro: ' + e.message, 'error') }
+    } else toast('Rostro capturado. Pulsa "Guardar" para inscribir al cliente.', 'success')
+    setTimeout(() => setFace(false), 900)
+  }
+
   const assignNfc = async () => {
     setNfcBusy(true)
     try {
@@ -114,7 +126,9 @@ export default function MemberForm({ member, plans, coaches, onClose, onSaved })
           <div className="card center">
             <h3><ScanFace size={16} className="y" /> Reconocimiento facial</h3>
             <Avatar lg src={f.photo} name={f.full_name} />
-            <div className="small mt">{f.face_descriptors?.length ? <span className="badge ok"><CheckCircle2 size={12} /> {f.face_descriptors.length} muestras registradas</span> : <span className="badge warn">Sin rostro registrado</span>}</div>
+            <div className="small mt">{f.face_descriptors?.length
+              ? (isNew ? <span className="badge warn"><CheckCircle2 size={12} /> Capturado · se guarda al pulsar Guardar</span> : <span className="badge ok"><CheckCircle2 size={12} /> {f.face_descriptors.length} muestras guardadas</span>)
+              : <span className="badge warn">Sin rostro registrado</span>}</div>
             <button type="button" className="btn block mt" onClick={() => setFace(true)}><ScanFace size={16} /> {f.face_descriptors?.length ? 'Volver a registrar' : 'Registrar rostro'}</button>
           </div>
           <div className="card">
@@ -131,7 +145,7 @@ export default function MemberForm({ member, plans, coaches, onClose, onSaved })
       </div>
       {face && (
         <Modal title="Registro facial" onClose={() => setFace(false)}>
-          <FaceEnroll onDone={({ descriptors, photo }) => { setF((x) => ({ ...x, face_descriptors: descriptors, photo: photo || x.photo })); toast('Rostro registrado', 'success'); setTimeout(() => setFace(false), 900) }} />
+          <FaceEnroll onDone={saveFace} />
           <p className="tiny muted mt">Se capturan automáticamente 5 muestras del rostro para un reconocimiento preciso.</p>
         </Modal>
       )}

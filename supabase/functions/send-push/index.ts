@@ -20,11 +20,15 @@ const json = (b: unknown, status = 200) =>
 
 const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
-webpush.setVapidDetails(
-  Deno.env.get("VAPID_SUBJECT") ?? "mailto:admin@ironyellow.gym",
-  Deno.env.get("VAPID_PUBLIC_KEY")!,
-  Deno.env.get("VAPID_PRIVATE_KEY")!,
-);
+// Si faltan las claves VAPID no se rompe la función: se informa y se omite el envío web
+const VAPID_OK = !!(Deno.env.get("VAPID_PUBLIC_KEY") && Deno.env.get("VAPID_PRIVATE_KEY"));
+if (VAPID_OK) {
+  webpush.setVapidDetails(
+    Deno.env.get("VAPID_SUBJECT") ?? "mailto:admin@ironyellow.gym",
+    Deno.env.get("VAPID_PUBLIC_KEY")!,
+    Deno.env.get("VAPID_PRIVATE_KEY")!,
+  );
+}
 
 /** Convierte la audiencia elegida por el admin en una lista de IDs de clientes (null = todos). */
 async function resolveRecipients(a: any): Promise<string[] | null> {
@@ -83,7 +87,7 @@ async function sendFcm(sa: any, token: string, n: any) {
         token,
         notification: { title: n.title, body: n.body, ...(n.image_url ? { image: n.image_url } : {}) },
         data: { id: n.id, url: n.url ?? "/", category: n.category ?? "promo" },
-        android: { priority: "high", notification: { color: "#FFD60A", channel_id: "promos" } },
+        android: { priority: "high", notification: { color: "#FFD60A", channel_id: n.category === "clase" ? "clases" : "promos", ...(n.category === "clase" ? { default_sound: true, default_vibrate_timings: false, vibrate_timings: ["0.5s", "0.4s", "0.5s", "0.4s", "0.8s"], notification_priority: "PRIORITY_MAX", visibility: "PUBLIC" } : {}) } },
       },
     }),
   });
@@ -107,19 +111,32 @@ Deno.serve(async (req) => {
     const recipients = await resolveRecipients(n.audience);
     await db.from("notifications").update({ recipients }).eq("id", id);
 
-    let q = db.from("push_subscriptions").select("*");
-    if (recipients) {
-      if (!recipients.length) {
-        await db.from("notifications").update({ status: "enviada", sent_at: new Date().toISOString() }).eq("id", id);
-        return json({ sent: 0, failed: 0, devices: 0 });
-      }
-      q = q.in("member_id", recipients);
+    // Dispositivos de clientes (todos o la audiencia) + dispositivos del personal indicado (coaches)
+    const staffIds: string[] = n.audience?.staff_ids ?? [];
+    const subs: any[] = [];
+    if (recipients === null) {
+      const { data, error: e2 } = await db.from("push_subscriptions").select("*").not("member_id", "is", null);
+      if (e2) throw e2;
+      subs.push(...(data ?? []));
+    } else if (recipients.length) {
+      const { data, error: e2 } = await db.from("push_subscriptions").select("*").in("member_id", recipients);
+      if (e2) throw e2;
+      subs.push(...(data ?? []));
     }
-    const { data: subs, error: e2 } = await q;
-    if (e2) throw e2;
+    if (staffIds.length) {
+      const { data, error: e3 } = await db.from("push_subscriptions").select("*").in("staff_id", staffIds);
+      if (e3) throw e3;
+      subs.push(...(data ?? []));
+    }
+    if (!subs.length) {
+      await db.from("notifications").update({ status: "enviada", sent_at: new Date().toISOString(), devices_count: 0 }).eq("id", id);
+      return json({ sent: 0, failed: 0, devices: 0 });
+    }
 
     const sa = Deno.env.get("FCM_SERVICE_ACCOUNT") ? JSON.parse(Deno.env.get("FCM_SERVICE_ACCOUNT")!) : null;
-    const payload = JSON.stringify({ id: n.id, title: n.title, body: n.body, image: n.image_url, url: n.url ?? "/", category: n.category });
+    // Las alertas de clase son urgentes: quedan fijas en pantalla y vibran fuerte
+    const urgent = n.category === "clase";
+    const payload = JSON.stringify({ id: n.id, title: n.title, body: n.body, image: n.image_url, url: n.url ?? "/", category: n.category, urgent });
     let sent = 0, failed = 0;
     const dead: string[] = [];
 
@@ -127,8 +144,11 @@ Deno.serve(async (req) => {
       const chunk = subs!.slice(i, i + 50);
       const results = await Promise.allSettled(chunk.map((s: any) => {
         if (s.platform === "web") {
+          if (!VAPID_OK) return Promise.reject(Object.assign(new Error("Faltan VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY en los secretos de Supabase"), { statusCode: 0 }));
           return webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload, { TTL: 86400, urgency: "high" });
         }
+        // App Android sin Firebase: el teléfono consulta Supabase en segundo plano (background-runner)
+        if (String(s.endpoint).startsWith("local:")) return Promise.resolve();
         if (!sa) return Promise.reject(Object.assign(new Error("FCM no configurado"), { statusCode: 0 }));
         return sendFcm(sa, s.endpoint, n);
       }));
@@ -145,8 +165,9 @@ Deno.serve(async (req) => {
 
     await db.from("notifications").update({
       status: "enviada", sent_count: sent, failed_count: failed, devices_count: subs?.length ?? 0, sent_at: new Date().toISOString(),
+      error: VAPID_OK ? null : "Push web no enviado: faltan las claves VAPID en Supabase",
     }).eq("id", id);
-    return json({ sent, failed, devices: subs?.length ?? 0, removed: dead.length });
+    return json({ sent, failed, devices: subs?.length ?? 0, removed: dead.length, vapid: VAPID_OK });
   } catch (e) {
     if (id) await db.from("notifications").update({ status: "error", error: (e as Error).message }).eq("id", id);
     return json({ error: (e as Error).message }, 500);

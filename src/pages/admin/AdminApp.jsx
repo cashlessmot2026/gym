@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, AreaChart, Area } from 'recharts'
-import { LayoutDashboard, Users, CreditCard, Tags, UserCog, Dumbbell, CalendarCheck, Plus, Search, RefreshCw, Pencil, Trash2, AlertTriangle, DollarSign, UserCheck, Clock, KeyRound, Power, Megaphone } from 'lucide-react'
+import { LayoutDashboard, Users, CreditCard, Tags, UserCog, Dumbbell, CalendarCheck, Plus, Search, RefreshCw, Pencil, Trash2, AlertTriangle, DollarSign, UserCheck, Clock, KeyRound, Power, Megaphone, CalendarClock } from 'lucide-react'
 import { supabase, q } from '../../lib/supabase'
 import { getSession, setSession, clearSession, setPassword } from '../../lib/auth'
 import { getPlans, getTrainingTypes } from '../../lib/data'
@@ -11,12 +11,14 @@ import { Shell, PageTitle, Stat, Loading, Empty, Modal, Input, Select, Field, Av
 import { tip } from '../../components/Analytics'
 import MemberForm from './MemberForm'
 import Promotions from './Promotions'
+import ClassesAdmin, { TodayClasses } from './Classes'
 import { ProofPicker, ProofLink, PendingProofs } from '../../components/Payments'
 
 const NAV = [
   { id: 'dash', label: 'Dashboard', icon: LayoutDashboard, short: 'Inicio' },
   { id: 'members', label: 'Clientes', icon: Users },
   { id: 'memberships', label: 'Membresías', icon: CreditCard },
+  { id: 'classes', label: 'Clases', icon: CalendarClock },
   { id: 'attendance', label: 'Asistencia', icon: CalendarCheck },
   { id: 'promos', label: 'Promociones push', short: 'Promos', icon: Megaphone },
   { id: 'plans', label: 'Planes', icon: Tags },
@@ -49,6 +51,7 @@ export default function AdminApp() {
           {tab === 'dash' && <Dashboard data={data} reload={load} goTo={setTab} />}
           {tab === 'members' && <Members data={data} reload={load} />}
           {tab === 'memberships' && <Memberships data={data} reload={load} me={me} />}
+          {tab === 'classes' && <ClassesAdmin types={data.types} />}
           {tab === 'attendance' && <Attendance />}
           {tab === 'promos' && <Promotions data={data} me={me} />}
           {tab === 'plans' && <Plans data={data} reload={load} />}
@@ -104,6 +107,10 @@ function Dashboard({ data, reload, goTo }) {
           <button className="btn primary sm" onClick={() => goTo('memberships')}>Revisar</button>
         </div>
       )}
+      <div className="card mt">
+        <div className="row between"><h3 style={{ margin: 0 }}><CalendarClock size={16} className="y" /> Clases de hoy</h3><button className="btn sm" onClick={() => goTo('classes')}>Gestionar clases</button></div>
+        <div className="mt"><TodayClasses /></div>
+      </div>
       <div className="grid g2 mt">
         <div className="card"><h3>Ingresos por mes</h3>
           <ResponsiveContainer width="100%" height={230}><BarChart data={incomeChart}><CartesianGrid stroke="#222" vertical={false} /><XAxis dataKey="mes" stroke="#666" fontSize={11} /><YAxis stroke="#666" fontSize={11} /><Tooltip {...tip} /><Bar dataKey="total" fill="#FFD60A" radius={[6, 6, 0, 0]} /></BarChart></ResponsiveContainer>

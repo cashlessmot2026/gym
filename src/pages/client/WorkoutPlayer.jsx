@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Play, Pause, SkipForward, CheckCircle2, X, HeartPulse, Watch, CirclePlay } from 'lucide-react'
 import { fmtTime } from '../../lib/constants'
-import { onWatch, enableMediaControls, disableMediaControls, updateMediaTitle } from '../../lib/watch'
+import { enableMediaControls, disableMediaControls, updateMediaTitle } from '../../lib/watch'
+import { listenRemoteButton } from '../../lib/remote'
 import { videoSearch } from '../../lib/exerciseLibrary'
 import { useWatch, WatchPanel } from '../../components/Media'
 
@@ -106,10 +107,9 @@ export default function WorkoutPlayer({ item, onFinish, onClose }) {
   api.current = { pause: togglePause, button }
 
   useEffect(() => {
-    const off = onWatch('button', () => api.current.button())
-    const key = (e) => { if (e.code === 'Space' && e.target.tagName !== 'INPUT') { e.preventDefault(); api.current.button() } }
-    window.addEventListener('keydown', key)
-    return () => { off(); window.removeEventListener('keydown', key); disableMediaControls() }
+    // Cualquier botón Bluetooth (control de selfie, auriculares, botón BLE, reloj) o teclado
+    const off = listenRemoteButton(() => api.current.button())
+    return () => { off(); disableMediaControls() }
   }, [])
 
   useEffect(() => {
@@ -204,7 +204,7 @@ export default function WorkoutPlayer({ item, onFinish, onClose }) {
         )}
 
         <div className="row between mt">
-          <span className="tiny muted"><Watch size={12} /> Botón del reloj / barra espaciadora = detener contador</span>
+          <span className="tiny muted"><Watch size={12} /> Botón Bluetooth, reloj o barra espaciadora = detener contador</span>
           <a className="btn sm ghost" href={videoSearch(ex.name)} target="_blank" rel="noreferrer"><CirclePlay size={14} /> Técnica</a>
         </div>
         {item.notes && <p className="small muted">📝 {item.notes}</p>}

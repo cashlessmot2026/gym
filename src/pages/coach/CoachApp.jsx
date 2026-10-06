@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts'
-import { Users, ListChecks, UsersRound, Dumbbell, BarChart3, Search, Plus, Trash2, Pencil, Save, Globe, ArrowLeft, Activity, Clock, Flame, Trophy, Send } from 'lucide-react'
+import { Users, ListChecks, UsersRound, Dumbbell, BarChart3, Search, Plus, Trash2, Pencil, Save, Globe, ArrowLeft, Activity, Clock, Flame, Trophy, Send, CalendarClock } from 'lucide-react'
 import { supabase, q } from '../../lib/supabase'
 import { getSession, setSession, clearSession } from '../../lib/auth'
 import { getExercises, getTrainingTypes, assignRoutine } from '../../lib/data'
@@ -11,9 +11,11 @@ import { MemberAnalytics, tip } from '../../components/Analytics'
 import BodyMetrics from '../../components/BodyMetrics'
 import ExerciseBrowser from '../../components/ExerciseBrowser'
 import AssignmentEditor, { WeekdayPicker } from './AssignmentEditor'
+import CoachClasses, { CoachAlerts } from './CoachClasses'
 
 const NAV = [
   { id: 'clients', label: 'Clientes', icon: Users },
+  { id: 'classes', label: 'Clases', icon: CalendarClock },
   { id: 'routines', label: 'Rutinas', icon: ListChecks },
   { id: 'groups', label: 'Grupos', icon: UsersRound },
   { id: 'exercises', label: 'Ejercicios', icon: Dumbbell },
@@ -46,6 +48,8 @@ export default function CoachApp() {
       {!d ? <Loading /> : (
         <>
           {tab === 'clients' && <Clients d={d} me={me} />}
+          {tab === 'classes' && <CoachClasses me={me} />}
+          {tab !== 'classes' && <CoachAlerts me={me} />}
           {tab === 'routines' && <Routines d={d} me={me} reload={load} />}
           {tab === 'groups' && <Groups d={d} me={me} reload={load} />}
           {tab === 'exercises' && <Exercises d={d} me={me} reload={load} />}

@@ -88,8 +88,9 @@ function setConnected(device, connected) {
 /** Abre el selector de dispositivos y vincula el reloj. */
 export async function pairWatch() {
   await init()
+  // Sin filtro: aparece cualquier dispositivo BLE (relojes, bandas, botones tipo iTag, pulsadores)
   const device = await BleClient.requestDevice({
-    optionalServices: [HR_SERVICE, BATTERY_SERVICE, numberToUUID(0x1812), numberToUUID(0xfee0), numberToUUID(0xfee7)]
+    optionalServices: [HR_SERVICE, BATTERY_SERVICE, numberToUUID(0xffe0), numberToUUID(0x1802), numberToUUID(0xfee0), numberToUUID(0xfee7), numberToUUID(0xfff0), numberToUUID(0x180a)]
   })
   await connectDevice(device)
   localStorage.setItem(STORE, JSON.stringify({ deviceId: device.deviceId, name: device.name }))

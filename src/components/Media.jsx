@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
 import { CheckCircle2, Download, ScanFace, SwitchCamera, Watch, Bluetooth, BluetoothOff, HeartPulse, Battery } from 'lucide-react'
-import { detectFace, faceQuality, loadFace, snapshot, drawBox } from '../lib/face'
+import { detectFace, faceQuality, loadFace, snapshot, drawBox, faceBackend } from '../lib/face'
+import { listenRemoteButton } from '../lib/remote'
 import { onWatch, pairWatch, unpairWatch, watchState, bleSupported, savedWatch, reconnectWatch } from '../lib/watch'
 import { Spinner, useToast } from './ui'
 
@@ -75,6 +76,7 @@ export function FaceEnroll({ onDone, samples = 5 }) {
   const [manual, setManual] = useState(false)
   const [round, setRound] = useState(0)
   const st = useRef({ collected: [], best: null, last: 0, lastDet: null, started: 0 })
+  const [fps, setFps] = useState(0)
 
   useEffect(() => {
     loadFace().then(() => setModels(true)).catch(() => setModelErr('No se pudieron cargar los modelos de IA. Revisa la conexión y recarga.'))
@@ -94,8 +96,10 @@ export function FaceEnroll({ onDone, samples = 5 }) {
       while (!stop) {
         const v = ref.current
         if (!v || v.readyState < 2) { await sleep(100); continue }
+        const t0 = performance.now()
         const det = await detectFace(v, 0.4).catch(() => null)
         if (stop) break
+        setFps((f) => Math.round((f * 0.7 + 1000 / Math.max(1, performance.now() - t0) * 0.3) * 10) / 10)
         const q = faceQuality(det, v)
         const s = st.current
         s.lastDet = det
@@ -155,6 +159,7 @@ export function FaceEnroll({ onDone, samples = 5 }) {
         {Array.from({ length: samples }).map((_, i) => <div key={i} className="grow" style={{ height: 8, borderRadius: 6, background: i < count ? 'var(--ok)' : 'var(--card2)', transition: '.2s' }} />)}
       </div>
       <p className="tiny muted center" style={{ margin: 0 }}>Mira de frente, con buena luz y sin gorra ni lentes oscuros. La captura es automática.</p>
+      {models && <p className="tiny muted center" style={{ margin: 0, opacity: 0.6 }}>Motor IA: {faceBackend().toUpperCase()} · {fps ? `${fps} detecciones/s` : 'iniciando…'}</p>}
       <div className="row">
         {manual && !done && <button type="button" className="btn grow" onClick={captureManual}><ScanFace size={16} /> Capturar ahora</button>}
         {done && <button type="button" className="btn grow" onClick={() => setRound((r) => r + 1)}><CheckCircle2 size={16} /> Repetir captura</button>}
@@ -255,10 +260,15 @@ export function WatchPanel({ compact }) {
   return (
     <div className="card">
       <div className="row between">
-        <div className="row"><Watch className="y" /><h3 style={{ margin: 0 }}>Smartwatch</h3></div>
+        <div className="row"><Watch className="y" /><h3 style={{ margin: 0 }}>Botón / dispositivo Bluetooth</h3></div>
         {s.connected ? <span className="badge ok">Conectado</span> : <span className="badge">Desconectado</span>}
       </div>
-      <p className="small muted">Vincula tu reloj o banda por Bluetooth para ver tu frecuencia cardiaca en vivo y usar sus botones (Pausa / Play / Siguiente) para detener el contador o completar la serie.</p>
+      <p className="small muted">Detén el contador sin tocar el teléfono con <b>cualquier dispositivo Bluetooth que tenga un botón</b>:</p>
+      <ul className="small muted" style={{ paddingLeft: 18, marginTop: 0 }}>
+        <li><b>Control de selfie, auriculares, teclado o pulsador:</b> emparéjalo en los ajustes de Bluetooth del teléfono. No hace falta nada más.</li>
+        <li><b>Botón BLE (tipo iTag), banda o reloj con pulso:</b> vincúlalo aquí abajo. También muestra tu frecuencia cardiaca.</li>
+        <li><b>Smartwatch (Wear OS, Galaxy, Apple Watch):</b> usa los controles de música del reloj. Pausa/Play pausa el contador; Siguiente completa la serie.</li>
+      </ul>
       {s.connected && (
         <div className="row wrap mb">
           <span className="badge y">{s.device?.name || 'Dispositivo'}</span>
@@ -268,9 +278,32 @@ export function WatchPanel({ compact }) {
       )}
       {!bleSupported() && <p className="tiny warn">Bluetooth no disponible en este navegador: usa la app nativa Android o Chrome.</p>}
       <div className="row wrap">
-        <button className="btn primary" onClick={pair} disabled={busy || !bleSupported()}>{busy ? <Spinner /> : <Bluetooth size={16} />} {s.connected || saved ? 'Vincular otro' : 'Vincular smartwatch'}</button>
+        <button className="btn primary" onClick={pair} disabled={busy || !bleSupported()}>{busy ? <Spinner /> : <Bluetooth size={16} />} {s.connected || saved ? 'Vincular otro' : 'Vincular dispositivo BLE'}</button>
         {(s.connected || saved) && <button className="btn ghost" onClick={unpairWatch}><BluetoothOff size={16} /> Desvincular</button>}
       </div>
+      <ButtonTester />
+    </div>
+  )
+}
+
+/** Probador: muestra si la app recibe el botón del control / reloj / dispositivo. */
+function ButtonTester() {
+  const [on, setOn] = useState(false)
+  const [hits, setHits] = useState([])
+  useEffect(() => {
+    if (!on) return
+    const off = listenRemoteButton((src) => setHits((h) => [{ src, t: new Date() }, ...h].slice(0, 4)))
+    const t = setTimeout(() => setOn(false), 20000)
+    return () => { off(); clearTimeout(t) }
+  }, [on])
+  return (
+    <div className="mt" style={{ borderTop: '1px solid var(--line)', paddingTop: 12 }}>
+      <div className="row between wrap">
+        <b className="small">Probar botón</b>
+        <button type="button" className={`btn sm ${on ? 'primary' : ''}`} onClick={() => { setHits([]); setOn(!on) }}>{on ? 'Escuchando… (20 s)' : 'Iniciar prueba'}</button>
+      </div>
+      {on && !hits.length && <p className="tiny muted">Presiona el botón de tu dispositivo ahora.</p>}
+      {hits.map((h, i) => <div key={i} className="tiny ok">✔ Botón detectado ({h.src}) · {h.t.toLocaleTimeString('es')}</div>)}
     </div>
   )
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Dumbbell, LineChart, Scale, Bot, Library, User, KeyRound, Pencil } from 'lucide-react'
+import { Dumbbell, LineChart, Scale, Bot, Library, User, KeyRound, Pencil, CalendarClock } from 'lucide-react'
 import { supabase, q } from '../../lib/supabase'
 import { getSession, setSession, clearSession, setPassword } from '../../lib/auth'
 import { getStatus, getTrainingTypes } from '../../lib/data'
@@ -15,6 +15,8 @@ import { usePushInbox, PushBanner, NotificationBell, PushOptIn } from '../../com
 import { ClientTransfer, ProofLink } from '../../components/Payments'
 import Onboarding from './Onboarding'
 import Training from './Training'
+import Classes from './Classes'
+import { memberSchedules } from '../../lib/classes'
 
 const NAV = [
   { id: 'train', label: 'Entrenar', icon: Dumbbell },
@@ -61,12 +63,16 @@ export default function ClientApp() {
 }
 
 function ClientMain({ me, status, types, tab, setTab, saveProfile, onLogout }) {
+  // Pestaña "Clases": aparece si eligió Box (u otra modalidad con clases) o si está en un grupo
+  const [hasClasses, setHasClasses] = useState(false)
+  useEffect(() => { memberSchedules(me).then((r) => setHasClasses(r.schedules.length > 0)).catch(() => {}) }, [me.id, (me.training_modes || []).join()])
+  const nav = hasClasses ? [NAV[0], { id: 'classes', label: 'Clases', icon: CalendarClock }, ...NAV.slice(1)] : NAV
   // Abre el destino de una notificación: pestaña interna (?tab=...) o enlace externo
   const openUrl = (url) => {
     if (!url) return
     if (/^https?:/i.test(url) && !url.startsWith(location.origin)) { window.open(url, '_blank', 'noopener'); return }
     const t = new URL(url, location.origin).searchParams.get('tab')
-    if (t && NAV.some((n) => n.id === t)) setTab(t)
+    if (t && (t === 'classes' || NAV.some((n) => n.id === t))) setTab(t)
   }
   const inbox = usePushInbox(me, openUrl)
   useEffect(() => { openUrl(location.href) }, [])
@@ -74,9 +80,10 @@ function ClientMain({ me, status, types, tab, setTab, saveProfile, onLogout }) {
   const first = me.full_name.split(' ')[0]
   const bell = <NotificationBell inbox={inbox} onOpen={openUrl} />
   return (
-    <Shell sub="MI ENTRENAMIENTO" nav={NAV} value={tab} onChange={setTab} user={me} onLogout={onLogout}>
+    <Shell sub="MI ENTRENAMIENTO" nav={nav} value={tab} onChange={setTab} user={me} onLogout={onLogout}>
       <PushBanner n={inbox.banner} onClose={inbox.closeBanner} onOpen={openUrl} />
       {tab === 'train' && <><PageTitle a="HOLA," b={first.toUpperCase()}><WatchPanel compact />{bell}</PageTitle><div className="mb"><PushOptIn member={me} compact /></div><Training member={me} status={status} types={types} /></>}
+      {tab === 'classes' && <><PageTitle a="MIS" b="CLASES">{bell}</PageTitle><Classes member={me} /></>}
       {tab === 'progress' && <><PageTitle a="MI" b="PROGRESO">{bell}</PageTitle><MemberAnalytics memberId={me.id} /></>}
       {tab === 'body' && <><PageTitle a="MEDIDAS" b="E IMC">{bell}</PageTitle><BodyMetrics member={me} /></>}
       {tab === 'nutri' && <><PageTitle a="NUTRICIONISTA" b="IA">{bell}</PageTitle><NutritionAI member={me} /></>}

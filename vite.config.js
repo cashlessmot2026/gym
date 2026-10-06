@@ -10,7 +10,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icon.svg', 'models/*'],
+      includeAssets: ['icon.svg', 'models/*', 'tfjs-wasm/*'],
       manifest: {
         name: 'IronYellow Gym',
         short_name: 'IronYellow',
@@ -27,7 +27,7 @@ export default defineConfig({
       workbox: {
         importScripts: ['push-sw.js'],
         maximumFileSizeToCacheInBytes: 12 * 1024 * 1024,
-        globPatterns: ['**/*.{js,css,html,svg,png,json,bin,woff2}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,json,bin,wasm,woff2}'],
         navigateFallback: 'index.html',
         runtimeCaching: [
           {

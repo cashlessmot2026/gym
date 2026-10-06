@@ -5,3 +5,4 @@ dev-dist
 *.log
 .env.vapid.json
 IronYellow_Gym_Accesos.pdf
+IronYellow-Gym.apk

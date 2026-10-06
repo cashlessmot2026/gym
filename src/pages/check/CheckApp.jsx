@@ -258,15 +258,21 @@ function FaceCheck({ onMatch, paused }) {
   const [modelOk, setModelOk] = useState(false)
   const pausedRef = useRef(paused)
   pausedRef.current = paused
+  const membersRef = useRef([])
+  membersRef.current = members || []
 
   useEffect(() => {
-    loadFace().then(() => setModelOk(true))
-    q(supabase.from('members').select('id, full_name, face_descriptors').not('face_descriptors', 'is', null).eq('active', true)).then(setMembers)
+    loadFace().then(() => setModelOk(true)).catch(() => setHint('No se pudo cargar la IA facial. Revisa la conexión.'))
+    // Rostros registrados; se refresca cada minuto para incluir inscripciones nuevas
+    const load = () => q(supabase.from('members').select('id, full_name, face_descriptors').not('face_descriptors', 'is', null).eq('active', true))
+      .then((r) => setMembers(r.filter((m) => Array.isArray(m.face_descriptors) && m.face_descriptors.length))).catch(() => setMembers([]))
+    load()
+    const t = setInterval(load, 60000)
+    return () => clearInterval(t)
   }, [])
 
   useEffect(() => {
     if (!ready || !modelOk || !members) return
-    if (!members.length) { setHint('No hay rostros registrados todavía'); return }
     let stop = false
     let streak = { id: null, n: 0 }
     const loop = async () => {
@@ -275,16 +281,17 @@ function FaceCheck({ onMatch, paused }) {
         const det = await detectFace(ref.current, 0.5).catch(() => null)
         drawBox(canvasRef.current, ref.current, det)
         if (!det) { setHint('Mira a la cámara'); streak = { id: null, n: 0 } }
-        else if (det.detection.box.width < (ref.current.videoWidth || 640) * 0.18) setHint('Acércate un poco')
+        else if (det.detection.box.width < (ref.current.videoWidth || 640) * 0.1) setHint('Acércate un poco')
         else {
-          const r = bestMatch(det.descriptor, members)
+          const list = membersRef.current
+          const r = list.length ? bestMatch(det.descriptor, list) : { match: null, none: true }
           if (r.match) {
             streak = streak.id === r.match.id ? { id: r.match.id, n: streak.n + 1 } : { id: r.match.id, n: 1 }
             setHint(`Verificando… ${Math.min(100, streak.n * 34)}%`)
             if (streak.n >= 3) { onMatch(r.match.id); streak = { id: null, n: 0 }; await new Promise((x) => setTimeout(x, 3000)) }
           } else {
             streak = { id: null, n: 0 }
-            setHint(r.ambiguous ? 'Coincidencia ambigua, mira de frente' : 'Rostro no reconocido')
+            setHint(r.none ? 'Rostro detectado, pero aún no hay rostros registrados' : r.ambiguous ? 'Coincidencia ambigua, mira de frente' : 'Rostro no reconocido. ¿Ya registraste tu rostro?')
           }
         }
         await new Promise((x) => setTimeout(x, 60))
@@ -293,7 +300,7 @@ function FaceCheck({ onMatch, paused }) {
     setHint('Mira a la cámara')
     loop()
     return () => { stop = true }
-  }, [ready, modelOk, members, facing])
+  }, [ready, modelOk, members === null, facing])
 
   return (
     <div className="card reader-card wide">
