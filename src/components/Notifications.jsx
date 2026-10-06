@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bell, BellRing, BellOff, X, Megaphone, Tag, Calendar, Info, Clock } from 'lucide-react'
+import { Bell, BellRing, BellOff, X, Megaphone, Tag, Calendar, Info, Clock, Swords } from 'lucide-react'
 import { supabase, q } from '../lib/supabase'
 import { enablePush, disablePush, pushPermission, pushSupport, syncPush, listenPushMessages, isForMember, isForStaff, showNativeNow, isNative } from '../lib/push'
 import { playAlarm } from '../lib/alarm'
@@ -13,7 +13,8 @@ export const CATEGORY = {
   aviso: { label: 'Aviso', icon: Info },
   evento: { label: 'Evento', icon: Calendar },
   recordatorio: { label: 'Recordatorio', icon: Clock },
-  clase: { label: 'Clase', icon: BellRing }
+  clase: { label: 'Clase', icon: BellRing },
+  reto: { label: 'Reto', icon: Swords }
 }
 
 /**

@@ -20,6 +20,7 @@ const DESTINATIONS = [
   { value: '/?tab=progress', label: 'Mi progreso' },
   { value: '/?tab=body', label: 'Medidas e IMC' },
   { value: '/?tab=library', label: 'Ejercicios' },
+  { value: '/?tab=store', label: 'Tienda' },
   { value: '/?tab=profile', label: 'Mi perfil / membresía' },
   { value: 'external', label: 'Enlace externo…' }
 ]
@@ -145,7 +146,7 @@ export default function Promotions({ data, me }) {
             <div className="row wrap" style={{ gap: 6 }}>{TEMPLATES.map((t) => <button key={t.title} className="chip" onClick={() => setF((x) => ({ ...x, ...t }))}>{t.title.split(' ').slice(0, 3).join(' ')}</button>)}</div>
           </Field>
           <div className="grid g2 mt">
-            <Select label="Tipo" value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })} options={Object.entries(CATEGORY).map(([value, c]) => ({ value, label: c.label }))} />
+            <Select label="Tipo" value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })} options={Object.entries(CATEGORY).filter(([value]) => value !== 'reto').map(([value, c]) => ({ value, label: c.label }))} />
             <Select label="Al tocar, abrir…" value={f.url} onChange={(e) => setF({ ...f, url: e.target.value })} options={DESTINATIONS} />
             {f.url === 'external' && <Input label="Enlace externo" value={external} onChange={(e) => setExternal(e.target.value)} placeholder="https://…" span={2} />}
             <Field label={`Título (${f.title.length}/60)`} span={2}><input className="input" maxLength={60} value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder="🔥 ¡Promo de la semana!" /></Field>

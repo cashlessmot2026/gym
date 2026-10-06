@@ -85,7 +85,28 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "Método no permitido" }, 405);
   try {
-    const { action = "upload", member_id, image, thumb, ids } = await req.json();
+    const { action = "upload", member_id, staff_id, image, thumb, ids } = await req.json();
+
+    // ---- Imágenes de la tienda: solo el administrador (o personal activo) ----
+    if (action === "product_upload" || action === "product_delete") {
+      if (!staff_id) return json({ error: "Falta staff_id" }, 400);
+      const { data: s, error: se } = await db.from("staff").select("id, role, active").eq("id", staff_id).maybeSingle();
+      if (se) throw se;
+      if (!s || !s.active || s.role !== "admin") return json({ error: "Solo el administrador puede editar la tienda" }, 403);
+      if (action === "product_delete") {
+        for (const id of (ids || []).filter((x: string) => typeof x === "string" && x.startsWith(PREFIX + "tienda/"))) {
+          await r2Fetch("DELETE", id.slice(PREFIX.length)).catch(() => {});
+        }
+        return json({ ok: true });
+      }
+      if (!image) return json({ error: "Falta la imagen" }, 400);
+      const bytes = decode(image);
+      if (bytes.length > MAX_BYTES) return json({ error: "La imagen es demasiado grande" }, 413);
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const image_id = await put(`tienda/${stamp}-${crypto.randomUUID().slice(0, 6)}.jpg`, bytes);
+      return json({ image_id });
+    }
+
     if (!member_id) return json({ error: "Falta member_id" }, 400);
     const { data: m, error } = await db.from("members").select("id, full_name, active").eq("id", member_id).maybeSingle();
     if (error) throw error;

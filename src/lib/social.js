@@ -90,7 +90,7 @@ export async function squareJpeg(file, size, quality = 0.82) {
   return c.toDataURL('image/jpeg', quality).split(',')[1]
 }
 
-async function driveCall(body, fn = 'drive-upload') {
+export async function driveCall(body, fn = 'drive-upload') {
   const r = await fetch(`${SUPABASE_URL}/functions/v1/${fn}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Dumbbell, LineChart, Scale, Bot, Library, User, KeyRound, Pencil, CalendarClock, Home, Trophy, Swords, IdCard } from 'lucide-react'
+import { Dumbbell, LineChart, Scale, Bot, Library, User, KeyRound, Pencil, CalendarClock, Home, Trophy, Swords, IdCard, ShoppingBag } from 'lucide-react'
 import { supabase, q } from '../../lib/supabase'
 import { getSession, setSession, clearSession, setPassword } from '../../lib/auth'
 import { getStatus, getTrainingTypes } from '../../lib/data'
@@ -22,6 +22,7 @@ import Feed from './Feed'
 import SocialProfile from './SocialProfile'
 import Ranking from './Ranking'
 import Challenges from './Challenges'
+import Store from './Store'
 
 // Móvil: los 4 primeros van abajo y el resto en "Más"
 const NAV = [
@@ -29,6 +30,7 @@ const NAV = [
   { id: 'train', label: 'Entrenar', icon: Dumbbell },
   { id: 'ranking', label: 'Ranking', icon: Trophy },
   { id: 'me', label: 'Mi perfil', short: 'Perfil', icon: User },
+  { id: 'store', label: 'Tienda', icon: ShoppingBag },
   { id: 'challenges', label: 'Retos', icon: Swords },
   { id: 'progress', label: 'Progreso', icon: LineChart },
   { id: 'body', label: 'Medidas e IMC', short: 'Medidas', icon: Scale },
@@ -108,6 +110,7 @@ function ClientMain({ me, status, types, tab, setTab, saveProfile, onLogout }) {
         ? <SocialProfile key={viewing} me={me} memberId={viewing} onBack={() => setViewing(null)} onOpenProfile={openProfile} onChallenge={challenge} bell={bell} />
         : <>
       {tab === 'feed' && <Feed me={me} onOpenProfile={openProfile} onGo={go} bell={bell} />}
+      {tab === 'store' && <><PageTitle a="TIENDA" b="IRONYELLOW">{bell}</PageTitle><Store /></>}
       {tab === 'ranking' && <Ranking me={me} onOpenProfile={openProfile} bell={bell} />}
       {tab === 'challenges' && <Challenges me={me} preset={rival} onClearPreset={() => setRival(null)} onOpenProfile={openProfile} bell={bell} />}
       {tab === 'me' && <SocialProfile key="me" me={me} memberId={me.id} onOpenProfile={openProfile} onChallenge={challenge} bell={bell} />}

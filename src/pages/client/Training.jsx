@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell, Legend } from 'recharts'
-import { Dumbbell, Flag, Clock, Flame, Layers, Trophy, HeartPulse, CalendarDays, Users, CheckCircle2 } from 'lucide-react'
+import { Dumbbell, Flag, Clock, Flame, Layers, Trophy, HeartPulse, CalendarDays, Users, CheckCircle2, Plus, Pencil, Trash2 } from 'lucide-react'
 import { supabase, q } from '../../lib/supabase'
 import { getMemberAssignments } from '../../lib/data'
 import { WEEKDAYS, WEEKDAYS_SHORT, fmtTime, today } from '../../lib/constants'
@@ -12,6 +12,7 @@ import { ZoneBar } from '../../components/Activities'
 import { Loading, Empty, Modal, Stat, StatusBadge, useToast } from '../../components/ui'
 import { CHART, tip } from '../../components/Analytics'
 import WorkoutPlayer from './WorkoutPlayer'
+import { AddOwnExercises, EditOwnExercise } from './MyRoutine'
 
 export default function Training({ member, status, types }) {
   const toast = useToast()
@@ -22,6 +23,16 @@ export default function Training({ member, status, types }) {
   const [logs, setLogs] = useState([])
   const [summary, setSummary] = useState(null)
   const [bodyKg, setBodyKg] = useState(70)
+  // Sin coach asignado el cliente arma su propia rutina
+  const canOwn = !member.coach_id
+  const [adding, setAdding] = useState(false)
+  const [editing, setEditing] = useState(null)
+  const reload = () => getMemberAssignments(member.id).then(setItems).catch((e) => toast(e.message, 'error'))
+  const isOwn = (i) => i.member_id === member.id && !i.created_by
+  const removeOwn = async (i) => {
+    if (!window.confirm(`¿Quitar "${i.exercise?.name}" de tu rutina del ${WEEKDAYS[i.weekday]}?`)) return
+    try { await q(supabase.from('assignments').delete().eq('id', i.id)); reload() } catch (e) { toast(e.message, 'error') }
+  }
 
   useEffect(() => {
     getMemberAssignments(member.id).then(setItems).catch((e) => { toast(e.message, 'error'); setItems([]) })
@@ -119,11 +130,14 @@ export default function Training({ member, status, types }) {
 
       <div className="row between wrap">
         <h2 className="display" style={{ fontSize: '2rem', margin: 0 }}>{WEEKDAYS[day].toUpperCase()} <span className="y">· {dayItems.length} ejercicios</span></h2>
-        {session && <button className="btn primary" onClick={finishRoutine}><Flag size={16} /> Finalizar rutina y ver estadísticas</button>}
+        <div className="row wrap" style={{ gap: 8 }}>
+          {canOwn && <button className="btn" onClick={() => setAdding(true)}><Plus size={16} /> Agregar ejercicios</button>}
+          {session && <button className="btn primary" onClick={finishRoutine}><Flag size={16} /> Finalizar rutina y ver estadísticas</button>}
+        </div>
       </div>
       {dayItems.length > 0 && <div className="progress"><div style={{ width: progress + '%' }} /></div>}
 
-      {!dayItems.length && <Empty>Tu coach no ha programado ejercicios para este día.</Empty>}
+      {!dayItems.length && <Empty>{canOwn ? 'No tienes ejercicios este día. Pulsa "Agregar ejercicios" para armar tu rutina.' : 'Tu coach no ha programado ejercicios para este día.'}</Empty>}
       {Object.entries(grouped).map(([g, list]) => (
         <div key={g}>
           <div className="group-h y">{g}</div>
@@ -138,6 +152,10 @@ export default function Training({ member, status, types }) {
                     <div className="tiny muted">{i.sets} × {i.reps} · {fmtTime(i.work_sec)} trabajo · {fmtTime(i.rest_sec)} desc.{i.weight ? ` · ${i.weight} kg` : ''}</div>
                     {i.group_name && <span className="badge tiny mt" style={{ marginTop: 4 }}><Users size={10} /> {i.group_name}</span>}
                   </div>
+                  {canOwn && isOwn(i) && <>
+                    <button className="icon-btn" title="Editar" onClick={(e) => { e.stopPropagation(); setEditing(i) }}><Pencil size={15} /></button>
+                    <button className="icon-btn" title="Quitar" onClick={(e) => { e.stopPropagation(); removeOwn(i) }}><Trash2 size={15} /></button>
+                  </>}
                   {done ? <CheckCircle2 className="ok" /> : <span className="badge y">{isToday ? 'Iniciar' : 'Ver'}</span>}
                 </div>
               )
@@ -146,6 +164,8 @@ export default function Training({ member, status, types }) {
         </div>
       ))}
 
+      {adding && <AddOwnExercises member={member} defaultDay={day} existingCount={items.filter((x) => x.weekday === day).length} onClose={() => setAdding(false)} onSaved={() => { setAdding(false); reload() }} />}
+      {editing && <EditOwnExercise item={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); reload() }} />}
       {playing && <WorkoutPlayer item={playing} member={member} onFinish={(r) => onFinishExercise(playing, r)} onClose={() => setPlaying(null)} />}
       {summary && <DaySummary s={summary} onClose={() => setSummary(null)} />}
     </div>

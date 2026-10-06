@@ -137,7 +137,7 @@ Deno.serve(async (req) => {
     // Las alertas de clase son urgentes: quedan fijas en pantalla y vibran fuerte
     const urgent = n.category === "clase";
     const payload = JSON.stringify({ id: n.id, title: n.title, body: n.body, image: n.image_url, url: n.url ?? "/", category: n.category, urgent });
-    let sent = 0, failed = 0;
+    let sent = 0, failed = 0, local = 0; // local = apps Android que la recogen solas (cada ~15 min), no es un envío push
     const dead: string[] = [];
 
     for (let i = 0; i < (subs ?? []).length; i += 50) {
@@ -148,12 +148,12 @@ Deno.serve(async (req) => {
           return webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload, { TTL: 86400, urgency: "high" });
         }
         // App Android sin Firebase: el teléfono consulta Supabase en segundo plano (background-runner)
-        if (String(s.endpoint).startsWith("local:")) return Promise.resolve();
+        if (String(s.endpoint).startsWith("local:")) return Promise.resolve("local");
         if (!sa) return Promise.reject(Object.assign(new Error("FCM no configurado"), { statusCode: 0 }));
         return sendFcm(sa, s.endpoint, n);
       }));
       results.forEach((r, k) => {
-        if (r.status === "fulfilled") sent++;
+        if (r.status === "fulfilled") { if (r.value === "local") local++; else sent++; }
         else {
           failed++;
           const code = (r.reason as any)?.statusCode;
@@ -167,7 +167,7 @@ Deno.serve(async (req) => {
       status: "enviada", sent_count: sent, failed_count: failed, devices_count: subs?.length ?? 0, sent_at: new Date().toISOString(),
       error: VAPID_OK ? null : "Push web no enviado: faltan las claves VAPID en Supabase",
     }).eq("id", id);
-    return json({ sent, failed, devices: subs?.length ?? 0, removed: dead.length, vapid: VAPID_OK });
+    return json({ sent, failed, local, devices: subs?.length ?? 0, removed: dead.length, vapid: VAPID_OK });
   } catch (e) {
     if (id) await db.from("notifications").update({ status: "error", error: (e as Error).message }).eq("id", id);
     return json({ error: (e as Error).message }, 500);
