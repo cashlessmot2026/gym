@@ -6,7 +6,7 @@ export const PAGE = 10
 
 // Fotos nuevas: Cloudflare R2 (ids "r2:<ruta>"). Fotos antiguas: Google Drive (id de archivo).
 // R2 se activa cuando existe la URL pública del bucket (VITE_R2_PUBLIC_URL o, si no, el valor fijo de esta línea).
-export const R2_PUBLIC_URL = (import.meta.env.VITE_R2_PUBLIC_URL || '').replace(/\/$/, '')
+export const R2_PUBLIC_URL = (import.meta.env.VITE_R2_PUBLIC_URL || 'https://pub-3411e320237141d7af4840f3dae6ff9a.r2.dev').replace(/\/$/, '')
 const isR2 = (id) => typeof id === 'string' && id.startsWith('r2:')
 
 /** URL directa de una imagen pública (R2 o Drive). */
