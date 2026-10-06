@@ -98,6 +98,14 @@ export async function enablePush(ownerOrMemberId) {
   if (perm !== 'granted') throw new Error('Permiso de notificaciones denegado. Actívalo en la configuración del navegador.')
   const reg = await swRegistration()
   let sub = await reg.pushManager.getSubscription()
+  // Si la suscripción se creó con otra clave VAPID, el servidor la rechaza (403): se renueva
+  const wanted = toUint8(VAPID_PUBLIC_KEY)
+  const have = sub?.options?.applicationServerKey && new Uint8Array(sub.options.applicationServerKey)
+  if (sub && have && (have.length !== wanted.length || have.some((b, i) => b !== wanted[i]))) {
+    await supabase.from('push_subscriptions').delete().eq('endpoint', sub.endpoint)
+    await sub.unsubscribe()
+    sub = null
+  }
   if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: toUint8(VAPID_PUBLIC_KEY) })
   const j = sub.toJSON()
   await saveSubscription({ ...owner, platform: 'web', endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth })
