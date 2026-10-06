@@ -9,7 +9,7 @@ export default function Community() {
   const toast = useToast()
   const [posts, setPosts] = useState(null)
   useEffect(() => {
-    q(supabase.from('posts').select('*, member:members(id, full_name, photo)').order('created_at', { ascending: false }).limit(120))
+    q(supabase.from('posts').select('*, member:members!posts_member_id_fkey(id, full_name, photo)').order('created_at', { ascending: false }).limit(120))
       .then(setPosts).catch((e) => { toast(e.message, 'error'); setPosts([]) })
   }, [])
   const remove = async (p) => {

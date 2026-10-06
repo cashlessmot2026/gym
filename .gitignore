@@ -6,3 +6,5 @@ dev-dist
 .env.vapid.json
 IronYellow_Gym_Accesos.pdf
 IronYellow-Gym.apk
+
+.secrets/

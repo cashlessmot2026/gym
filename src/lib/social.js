@@ -7,7 +7,7 @@ export const PAGE = 10
 /** URL directa de una imagen pública de Drive. */
 export const driveImg = (id, w = 1080) => (id ? `https://lh3.googleusercontent.com/d/${id}=w${w}` : null)
 
-const MEMBER = 'member:members(id, full_name, photo, goal, active)'
+const MEMBER = 'member:members!posts_member_id_fkey(id, full_name, photo, goal, active)'
 
 /** Feed: todos o solo a quien sigo. `before` = fecha de la última publicación cargada. */
 export async function getFeed({ me, scope = 'all', before }) {

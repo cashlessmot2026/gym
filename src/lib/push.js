@@ -10,7 +10,7 @@ import { supabase, q, SUPABASE_URL, SUPABASE_ANON_KEY } from './supabase'
 import { scheduleClassAlerts } from './classes'
 
 export const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY ||
-  'BO-KkAYiHjgTpD5vz9H-cq6V6bbJg2nsftOMvYtUov6SqJPC_BTP43_qDaEyd3d0TUk82oRYTNgh_tUMnQviA0s'
+  'BA7d65PQ5B0LqG5Nf5XTYOLBUi744wDtMDggzJgrGN-thLujug4qtflTu2vZuuSY9LiQ-27CbFysCMS4MNcRlh0'
 
 export const isNative = () => !!window.Capacitor?.isNativePlatform?.()
 const RUNNER = 'com.ironyellow.gym.check'
