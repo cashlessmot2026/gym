@@ -1,6 +1,9 @@
 // Manejo de notificaciones push en el Service Worker (importado por Workbox).
 // - App cerrada o en segundo plano: muestra la notificación del sistema.
 // - App abierta y visible: envía el mensaje a la ventana para mostrar el banner interno.
+const SCOPE = self.registration.scope // p. ej. https://dominio/gym/
+const resolve = (u) => /^https?:/i.test(u || '') ? u : new URL((u || '').replace(/^\//, ''), SCOPE).href
+
 self.addEventListener('push', (event) => {
   let data = {}
   try { data = event.data ? event.data.json() : {} } catch { data = { title: 'IronYellow Gym', body: event.data?.text() } }
@@ -15,8 +18,8 @@ self.addEventListener('push', (event) => {
     }
     await self.registration.showNotification(title, {
       body: data.body || '',
-      icon: '/icon.svg',
-      badge: '/icon.svg',
+      icon: SCOPE + 'icon.svg',
+      badge: SCOPE + 'icon.svg',
       image: data.image || undefined,
       tag: data.id || undefined,
       renotify: true,
@@ -29,7 +32,7 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
-  const target = new URL(event.notification.data?.url || '/', self.location.origin).href
+  const target = resolve(event.notification.data?.url)
   event.waitUntil((async () => {
     const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
     for (const w of wins) {

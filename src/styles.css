@@ -243,4 +243,4 @@ table.t { width: 100%; border-collapse: collapse; font-size: .88rem; }
 .phone { width: 300px; max-width: 100%; margin: 0 auto; border-radius: 34px; border: 8px solid #222; background: linear-gradient(160deg, #1a1a1a, #050505); padding: 40px 12px 30px; min-height: 420px; position: relative; }
 .phone::before { content: ''; position: absolute; top: 12px; left: 50%; transform: translateX(-50%); width: 90px; height: 18px; border-radius: 12px; background: #000; }
 .phone-notif { background: rgba(40,40,40,.92); border-radius: 18px; overflow: hidden; }
-.phone-notif img { width: 100%; max-height: 140px; object-fit: cover; display: block; }
+.phone-notif > img { width: 100%; max-height: 140px; object-fit: cover; display: block; }

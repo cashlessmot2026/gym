@@ -11,7 +11,7 @@ const CheckApp = lazy(() => import('./pages/check/CheckApp'))
 export default function App() {
   return (
     <ToastProvider>
-      <BrowserRouter>
+      <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '') || undefined}>
         <Suspense fallback={<div className="main"><Loading /></div>}>
           <Routes>
             <Route path="/" element={<ClientApp />} />
