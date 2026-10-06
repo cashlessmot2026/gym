@@ -200,8 +200,6 @@ table.t { width: 100%; border-collapse: collapse; font-size: .88rem; }
 .md code { background: #000; padding: 1px 6px; border-radius: 6px; }
 
 /* ---------- Check-in kiosk ---------- */
-.kiosk { min-height: 100vh; display: grid; grid-template-columns: 1fr 420px; }
-@media (max-width: 960px) { .kiosk { grid-template-columns: 1fr; } }
 .cam { position: relative; background: #000; border-radius: 20px; overflow: hidden; aspect-ratio: 4/3; border: 2px solid var(--line); }
 .cam video, .cam canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
 .cam .hint { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); background: rgba(0,0,0,.75); padding: 8px 16px; border-radius: 99px; font-weight: 600; font-size: .9rem; white-space: nowrap; }
@@ -244,3 +242,70 @@ table.t { width: 100%; border-collapse: collapse; font-size: .88rem; }
 .phone::before { content: ''; position: absolute; top: 12px; left: 50%; transform: translateX(-50%); width: 90px; height: 18px; border-radius: 12px; background: #000; }
 .phone-notif { background: rgba(40,40,40,.92); border-radius: 18px; overflow: hidden; }
 .phone-notif > img { width: 100%; max-height: 140px; object-fit: cover; display: block; }
+
+/* ---------- Kiosco de check-in adaptable (móvil, tablet, PC · Android / iPhone) ---------- */
+.kiosk { min-height: 100vh; min-height: 100dvh; display: grid; grid-template-columns: minmax(0, 1fr) 380px;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+.kiosk-main { padding: clamp(12px, 2.5vw, 28px); display: flex; flex-direction: column; gap: clamp(12px, 2vh, 20px); min-width: 0; }
+.kiosk-head { display: flex; align-items: center; gap: 12px; }
+.kiosk-head .brand { padding: 0; }
+.kiosk-clock { margin-left: auto; text-align: right; line-height: 1.1; }
+.kiosk-clock .display { font-size: clamp(1.6rem, 4vw, 2.4rem); }
+.kiosk-clock .tiny { text-transform: capitalize; }
+.kiosk-fs { flex-shrink: 0; }
+
+.mode-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: clamp(6px, 1.2vw, 12px); }
+.mode-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: clamp(10px, 2vh, 18px) 6px;
+  border-radius: 16px; border: 2px solid var(--line); background: var(--card); color: var(--mut); font-weight: 800; cursor: pointer;
+  transition: .15s; -webkit-tap-highlight-color: transparent; touch-action: manipulation; min-height: 64px; }
+.mode-btn svg { width: clamp(22px, 4vw, 30px); height: clamp(22px, 4vw, 30px); }
+.mode-btn:hover { border-color: #555; color: var(--tx); }
+.mode-btn.on { background: var(--y); border-color: var(--y); color: #000; box-shadow: 0 8px 30px -12px var(--y); }
+.mode-s { display: none; }
+
+.kiosk-reader { flex: 1; display: flex; align-items: flex-start; justify-content: center; min-height: 0; }
+.reader-card { width: min(560px, 100%); margin: 0 auto; }
+.reader-card.wide { width: min(820px, 100%); }
+.reader-card video { max-width: 100%; }
+.reader-card h3 { margin-bottom: 14px; }
+
+.pad-input { font-size: clamp(1.8rem, 7vw, 2.6rem) !important; text-align: center; letter-spacing: .12em; padding: 10px; }
+.pad-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(8px, 1.5vw, 12px); margin-top: 14px; }
+.pad-key { height: clamp(56px, 9vh, 84px); font-size: clamp(1.4rem, 4.5vw, 2rem); border-radius: 16px; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.pad-key:active { transform: scale(.96); background: var(--y-soft); }
+.pad-key.primary:active { background: var(--y2); }
+
+.cam { max-height: 62vh; max-height: 62dvh; aspect-ratio: 4 / 3; width: 100%; margin: 0 auto; }
+.kiosk-side { background: #0b0b0b; border-left: 1px solid var(--line); padding: 22px; position: sticky; top: 0; height: 100vh; height: 100dvh; overflow-y: auto; }
+.result-title { font-size: clamp(2rem, 6vw, 2.6rem); margin: 8px 0; }
+.waiting { padding: 40px 16px; }
+
+/* Tablet y móvil: el lector ocupa la pantalla; el resultado aparece a pantalla completa */
+@media (max-width: 1023px) {
+  .kiosk { grid-template-columns: 1fr; }
+  .kiosk-side { position: static; height: auto; border-left: 0; border-top: 1px solid var(--line); }
+  .waiting { display: none; }
+  .result-wrap.show { position: fixed; inset: 0; z-index: 150; background: rgba(0, 0, 0, .88); backdrop-filter: blur(6px);
+    display: grid; place-items: center; padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); animation: fade .15s; }
+  .result-wrap.show .result { width: min(460px, 100%); max-height: 100%; overflow-y: auto; }
+  .kiosk-side h3.mt2 { margin-top: 0; }
+}
+
+/* Teléfonos */
+@media (max-width: 560px) {
+  .kiosk-head .brand-name { font-size: 1.25rem; }
+  .kiosk-head .brand .tiny { display: none; }
+  .mode-l { display: none; }
+  .mode-s { display: inline; font-size: .78rem; }
+  .mode-btn { border-radius: 14px; min-height: 58px; }
+  .reader-card { padding: 14px; }
+  .kiosk-side { padding: 16px; }
+}
+
+/* Teléfonos en horizontal: aprovechar el ancho */
+@media (max-height: 520px) and (orientation: landscape) {
+  .kiosk-main { gap: 8px; }
+  .mode-btn { min-height: 44px; padding: 6px; flex-direction: row; }
+  .pad-key { height: 44px; }
+  .cam { max-height: 70dvh; }
+}

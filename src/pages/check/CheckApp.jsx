@@ -1,19 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
-import { IdCard, QrCode, Nfc, ScanFace, LogOut, CheckCircle2, XCircle, Delete, Power, Usb } from 'lucide-react'
+import { IdCard, QrCode, Nfc, ScanFace, CheckCircle2, XCircle, Delete, Power, Usb, Maximize, Minimize, Clock } from 'lucide-react'
 import { supabase, q } from '../../lib/supabase'
-import { getSession, setSession, clearSession } from '../../lib/auth'
 import { startNfcScan, nfcSupported } from '../../lib/nfc'
 import { loadFace, detectFace, bestMatch } from '../../lib/face'
-import Login from '../../components/Login'
-import { Brand, Tabs, Avatar, StatusBadge, Spinner, Empty } from '../../components/ui'
+import { Brand, Avatar, StatusBadge, Spinner, Empty } from '../../components/ui'
 import { QRScanner, useCamera } from '../../components/Media'
 
 const MODES = [
   { id: 'cedula', label: 'Cédula', icon: IdCard },
-  { id: 'qr', label: 'QR', icon: QrCode },
-  { id: 'nfc', label: 'NFC', icon: Nfc },
+  { id: 'qr', label: 'Código QR', short: 'QR', icon: QrCode },
+  { id: 'nfc', label: 'Tag NFC', short: 'NFC', icon: Nfc },
   { id: 'face', label: 'Facial', icon: ScanFace }
 ]
+const MODE_KEY = 'iy_check_mode'
+const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
 
 let chime
 function sound(ok) {
@@ -24,17 +24,43 @@ function sound(ok) {
     o.connect(g); g.connect(chime.destination); g.gain.setValueAtTime(0.2, chime.currentTime)
     g.gain.exponentialRampToValueAtTime(0.001, chime.currentTime + 0.35); o.start(); o.stop(chime.currentTime + 0.35)
   } catch { /* sin audio */ }
+  navigator.vibrate?.(ok ? 120 : [80, 60, 80])
 }
 
+// Nombre corto para la lista pública del kiosco (privacidad)
+const shortName = (n = '') => { const [a, b] = n.split(' '); return b ? `${a} ${b[0]}.` : a }
+
+/**
+ * Kiosco de control de acceso (sin inicio de sesión): cédula, QR, NFC y reconocimiento facial.
+ * Diseño adaptable: móvil (Android/iPhone), tablet y PC.
+ */
 export default function CheckApp() {
-  const [me, setMe] = useState(() => getSession('check'))
-  const [mode, setMode] = useState('cedula')
+  const [mode, setMode] = useState(() => localStorage.getItem(MODE_KEY) || 'cedula')
   const [result, setResult] = useState(null)
   const [recent, setRecent] = useState([])
+  const [now, setNow] = useState(new Date())
+  const [full, setFull] = useState(false)
   const busy = useRef(false)
 
-  const loadRecent = () => q(supabase.from('attendance').select('*, members(full_name, photo)').order('created_at', { ascending: false }).limit(12)).then(setRecent).catch(() => {})
-  useEffect(() => { if (me) loadRecent() }, [me])
+  const pick = (m) => { setMode(m); localStorage.setItem(MODE_KEY, m) }
+  const loadRecent = () => q(supabase.from('attendance').select('*, members(full_name, photo)').order('created_at', { ascending: false }).limit(10)).then(setRecent).catch(() => {})
+
+  useEffect(() => {
+    loadRecent()
+    const t = setInterval(() => setNow(new Date()), 1000)
+    // Mantener la pantalla encendida en tablets/kioscos (si el navegador lo permite)
+    let lock
+    const wake = async () => { try { lock = await navigator.wakeLock?.request('screen') } catch { /* no soportado */ } }
+    wake()
+    const vis = () => document.visibilityState === 'visible' && wake()
+    document.addEventListener('visibilitychange', vis)
+    const fs = () => setFull(!!document.fullscreenElement)
+    document.addEventListener('fullscreenchange', fs)
+    return () => { clearInterval(t); lock?.release?.(); document.removeEventListener('visibilitychange', vis); document.removeEventListener('fullscreenchange', fs) }
+  }, [])
+
+  const canFull = !!document.documentElement.requestFullscreen
+  const toggleFull = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {}))
 
   /** Valida y registra la asistencia. by: {cedula}|{qr}|{nfc,texts}|{id} */
   const checkIn = async (by, method) => {
@@ -66,8 +92,9 @@ export default function CheckApp() {
           : !m.active ? 'Usuario inactivo. Acércate a recepción.' : m.status === 'vencida' ? 'Tu membresía está vencida. Pasa por recepción para renovar.' : 'No tienes un plan activo.'
       })
       loadRecent()
-    } catch (e) {
-      setResult({ ok: false, title: 'Error', msg: e.message })
+    } catch {
+      sound(false)
+      setResult({ ok: false, title: 'Sin conexión', msg: 'No se pudo validar. Revisa la conexión a internet.' })
     } finally {
       setTimeout(() => { busy.current = false }, 1500)
     }
@@ -79,46 +106,60 @@ export default function CheckApp() {
     return () => clearTimeout(t)
   }, [result])
 
-  if (!me) return <Login scope="check" onLogin={(u) => { setSession('check', u); setMe(u) }} />
-
   return (
     <div className="kiosk">
-      <div style={{ padding: '20px 22px 40px' }}>
-        <div className="row between wrap mb">
+      <section className="kiosk-main">
+        <header className="kiosk-head">
           <Brand sub="CONTROL DE ACCESO" />
-          <div className="row"><span className="small muted">{me.full_name}</span><button className="icon-btn" onClick={() => { clearSession('check'); setMe(null) }}><LogOut size={18} /></button></div>
-        </div>
-        <Tabs tabs={MODES} value={mode} onChange={setMode} />
-        <div className="mt">
+          <div className="kiosk-clock">
+            <div className="display">{now.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })}</div>
+            <div className="tiny muted">{now.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
+          </div>
+          {canFull && <button className="icon-btn kiosk-fs" onClick={toggleFull} title="Pantalla completa">{full ? <Minimize size={20} /> : <Maximize size={20} />}</button>}
+        </header>
+
+        <nav className="mode-grid" aria-label="Método de ingreso">
+          {MODES.map((m) => (
+            <button key={m.id} className={`mode-btn ${mode === m.id ? 'on' : ''}`} onClick={() => pick(m.id)}>
+              <m.icon /><span className="mode-l">{m.label}</span><span className="mode-s">{m.short || m.label}</span>
+            </button>
+          ))}
+        </nav>
+
+        <div className="kiosk-reader">
           {mode === 'cedula' && <CedulaPad onSubmit={(c) => checkIn({ cedula: c }, 'cedula')} />}
-          {mode === 'qr' && <div className="card"><h3>Escanea el código QR del cliente</h3><QRScanner onScan={(t) => checkIn({ qr: t }, 'qr')} /></div>}
+          {mode === 'qr' && <div className="card reader-card"><h3 className="center">Muestra tu código QR a la cámara</h3><QRScanner onScan={(t) => checkIn({ qr: t }, 'qr')} /></div>}
           {mode === 'nfc' && <NfcReader onRead={(r) => checkIn({ nfc: r.serial, texts: r.texts }, 'nfc')} />}
           {mode === 'face' && <FaceCheck onMatch={(id) => checkIn({ id }, 'face')} paused={!!result} />}
         </div>
-      </div>
-      <aside style={{ background: '#0b0b0b', borderLeft: '1px solid var(--line)', padding: 22 }}>
-        {result ? (
-          <div className={`result ${result.ok ? 'ok' : 'bad'}`}>
-            {result.ok ? <CheckCircle2 size={56} className="ok" /> : <XCircle size={56} className="bad" />}
-            <h2 className="display" style={{ fontSize: '2.6rem', margin: '8px 0' }}>{result.title}</h2>
-            {result.m && <>
-              <div style={{ display: 'grid', placeItems: 'center' }}><Avatar lg src={result.m.photo} name={result.m.full_name} /></div>
-              <div style={{ fontWeight: 800, fontSize: '1.3rem', marginTop: 10 }}>{result.m.full_name}</div>
-              <div className="muted small">C.I. {result.m.cedula} · {result.m.plan_name || 'Sin plan'}</div>
-              <div className="mt"><StatusBadge status={result.m.status} days={result.m.days_left} /></div>
-              {result.m.status !== 'sin_plan' && <div className="display y" style={{ fontSize: '4rem', lineHeight: 1, marginTop: 10 }}>{result.m.days_left}<span className="small muted" style={{ fontFamily: 'var(--font)' }}> días</span></div>}
-            </>}
-            <p>{result.msg}</p>
-          </div>
-        ) : (
-          <div className="empty" style={{ padding: 40 }}><ScanFace size={42} className="y" /><p>Esperando check-in…</p></div>
-        )}
-        <h3 className="mt2">Últimos ingresos</h3>
+      </section>
+
+      <aside className="kiosk-side">
+        <div className={`result-wrap ${result ? 'show' : ''}`} onClick={() => setResult(null)}>
+          {result ? (
+            <div className={`result ${result.ok ? 'ok' : 'bad'}`}>
+              {result.ok ? <CheckCircle2 size={64} className="ok" /> : <XCircle size={64} className="bad" />}
+              <h2 className="display result-title">{result.title}</h2>
+              {result.m && <>
+                <div style={{ display: 'grid', placeItems: 'center' }}><Avatar lg src={result.m.photo} name={result.m.full_name} /></div>
+                <div style={{ fontWeight: 800, fontSize: '1.3rem', marginTop: 10 }}>{result.m.full_name}</div>
+                <div className="muted small">{result.m.plan_name || 'Sin plan'}</div>
+                <div className="mt"><StatusBadge status={result.m.status} days={result.m.days_left} /></div>
+                {result.m.status !== 'sin_plan' && <div className="display y" style={{ fontSize: '4rem', lineHeight: 1, marginTop: 10 }}>{result.m.days_left}<span className="small muted" style={{ fontFamily: 'var(--font)' }}> días</span></div>}
+              </>}
+              <p>{result.msg}</p>
+              <div className="tiny muted">Toca para cerrar</div>
+            </div>
+          ) : (
+            <div className="empty waiting"><ScanFace size={42} className="y" /><p>Esperando check-in…</p></div>
+          )}
+        </div>
+        <h3 className="mt2 row" style={{ gap: 6 }}><Clock size={16} className="y" /> Últimos ingresos</h3>
         <div className="col" style={{ gap: 8 }}>
           {recent.map((r) => (
             <div key={r.id} className="row">
               <Avatar src={r.members?.photo} name={r.members?.full_name} />
-              <div className="grow"><div className="small" style={{ fontWeight: 700 }}>{r.members?.full_name}</div>
+              <div className="grow"><div className="small" style={{ fontWeight: 700 }}>{shortName(r.members?.full_name)}</div>
                 <div className="tiny muted">{new Date(r.created_at).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })} · {r.method.toUpperCase()}</div></div>
               {r.allowed ? <CheckCircle2 size={18} className="ok" /> : <XCircle size={18} className="bad" />}
             </div>
@@ -132,16 +173,18 @@ export default function CheckApp() {
 
 function CedulaPad({ onSubmit }) {
   const [v, setV] = useState('')
+  // En pantallas táctiles se usa el teclado propio (evita que se abra el teclado del sistema)
+  const touch = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches
   const press = (k) => setV((x) => (k === 'del' ? x.slice(0, -1) : (x + k).slice(0, 15)))
   const go = () => { if (v) { onSubmit(v); setV('') } }
   return (
-    <div className="card" style={{ maxWidth: 460, margin: '0 auto' }}>
-      <h3>Ingresa tu número de cédula</h3>
-      <input className="input display" style={{ fontSize: '2.4rem', textAlign: 'center', letterSpacing: '.1em' }} value={v} inputMode="numeric" autoFocus
+    <div className="card reader-card pad">
+      <h3 className="center">Ingresa tu número de cédula</h3>
+      <input className="input display pad-input" value={v} inputMode="numeric" readOnly={touch} autoFocus={!touch} placeholder="• • • • • •"
         onChange={(e) => setV(e.target.value.replace(/[^\dA-Za-z-]/g, ''))} onKeyDown={(e) => e.key === 'Enter' && go()} />
-      <div className="grid g3 mt">
+      <div className="pad-grid">
         {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'del', '0', 'ok'].map((k) => (
-          <button key={k} className={`btn lg ${k === 'ok' ? 'primary' : ''}`} style={{ fontSize: '1.5rem', padding: 18 }} onClick={() => (k === 'ok' ? go() : press(k))}>
+          <button key={k} className={`btn pad-key ${k === 'ok' ? 'primary' : ''}`} onClick={() => (k === 'ok' ? go() : press(k))} aria-label={k === 'del' ? 'Borrar' : k === 'ok' ? 'Confirmar' : k}>
             {k === 'del' ? <Delete /> : k === 'ok' ? <CheckCircle2 /> : k}
           </button>
         ))}
@@ -179,14 +222,14 @@ function NfcReader({ onRead }) {
   useEffect(() => () => stopRef.current?.(), [])
 
   return (
-    <div className="card center" style={{ maxWidth: 520, margin: '0 auto' }}>
+    <div className="card center reader-card">
       <h3>Lectura de tag NFC</h3>
       <div className={`nfc-pulse ${on ? 'on' : ''}`}><Nfc size={54} /></div>
       <p className="display" style={{ fontSize: '1.8rem', margin: '14px 0 6px' }}>{on ? `LEYENDO… ${left}s` : 'LECTOR APAGADO'}</p>
       <button className={`btn lg ${on ? 'danger' : 'primary'}`} onClick={on ? stop : start} disabled={!nfcSupported()}>
         <Power size={20} /> {on ? 'Apagar' : 'Encender (5 s)'}
       </button>
-      {!nfcSupported() && <p className="tiny warn mt">Web NFC requiere Chrome en Android. Alternativa: lector NFC USB abajo.</p>}
+      {!nfcSupported() && <p className="tiny warn mt">{isIOS() ? 'iPhone y iPad no permiten leer NFC desde el navegador: usa cédula, QR o facial, o un lector NFC USB/Bluetooth.' : 'Web NFC requiere Chrome en Android. Alternativa: lector NFC USB abajo.'}</p>}
       {err && <div className="badge bad mt">{err}</div>}
       <div className="mt2" style={{ textAlign: 'left' }}>
         <label className="tiny muted" style={{ fontWeight: 700 }}><Usb size={12} /> LECTOR USB (modo teclado): haz clic y pasa el tag</label>
@@ -245,8 +288,8 @@ function FaceCheck({ onMatch, paused }) {
   }, [ready, modelOk, members])
 
   return (
-    <div className="card">
-      <div className="cam" style={{ maxWidth: 720, margin: '0 auto' }}>
+    <div className="card reader-card wide">
+      <div className="cam">
         <video ref={ref} playsInline muted />
         <div className="oval" />
         <div className="hint">{err || (!modelOk ? <><Spinner size={14} /> Cargando IA…</> : hint)}</div>
