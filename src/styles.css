@@ -484,3 +484,11 @@ img, video, canvas { max-width: 100%; }
 @media (max-width: 560px) {
   .grid > .field[style*="span"] { grid-column: 1 / -1 !important; }
 }
+
+/* ---------- Dispositivos Bluetooth ---------- */
+.device-row { padding: 8px 10px; background: var(--card2); border: 1px solid var(--line); border-radius: 12px; }
+.step { display: flex; gap: 12px; align-items: flex-start; padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--card2); }
+.step.active { border-color: var(--y); }
+.step.done { border-color: var(--ok); }
+.step-n { width: 26px; height: 26px; border-radius: 50%; background: var(--y); color: #000; display: grid; place-items: center; font-weight: 800; flex-shrink: 0; }
+.ex.pulse-on { border-color: var(--y); box-shadow: 0 0 0 2px var(--y-soft); animation: pulse 1.2s infinite; }

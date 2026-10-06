@@ -16,12 +16,13 @@ const HR_MEASUREMENT = numberToUUID(0x2a37)
 const BATTERY_SERVICE = numberToUUID(0x180f)
 const BATTERY_LEVEL = numberToUUID(0x2a19)
 const IGNORE = [HR_MEASUREMENT, BATTERY_LEVEL, numberToUUID(0x2a05)]
-const STORE = 'iy_watch'
+const STORE = 'iy_ble_devices'   // [{ deviceId, name, kind }]
+const OLD_STORE = 'iy_watch'
 
 const listeners = { hr: new Set(), button: new Set(), status: new Set(), battery: new Set() }
 const emit = (ev, v) => listeners[ev].forEach((fn) => { try { fn(v) } catch { /* listener */ } })
 
-export const watchState = { device: null, connected: false, hr: null, battery: null, hrSamples: [], buttons: 0 }
+export const watchState = { device: null, connected: false, hr: null, battery: null, hrSamples: [], buttons: 0, devices: {} }
 
 export function onWatch(ev, fn) {
   listeners[ev].add(fn)
@@ -76,19 +77,39 @@ export const openBleSettings = (what) => {
 export async function scanDevices(onFound, ms = 15000) {
   await init()
   const found = new Map()
-  await BleClient.requestLEScan({ allowDuplicates: false, scanMode: 2 }, (r) => {
+  const t0 = Date.now()
+  let pending = null
+  const flush = () => { pending = null; onFound([...found.values()].sort((a, b) => b.activeAt - a.activeAt || (b.name ? 1 : 0) - (a.name ? 1 : 0) || b.rssi - a.rssi)) }
+  await BleClient.requestLEScan({ allowDuplicates: true, scanMode: 2 }, (r) => {
     const id = r.device.deviceId
     const prev = found.get(id)
-    found.set(id, { device: r.device, name: r.localName || r.device.name || prev?.name || '', rssi: r.rssi ?? prev?.rssi ?? -100, uuids: r.uuids || prev?.uuids || [] })
-    onFound([...found.values()].sort((a, b) => (b.name ? 1 : 0) - (a.name ? 1 : 0) || b.rssi - a.rssi))
+    const now = Date.now()
+    const name = r.localName || r.device.name || prev?.name || ''
+    const uuids = r.uuids?.length ? r.uuids : prev?.uuids || []
+    // "Activo ahora": apareció después de empezar a buscar o su señal subió de golpe (botón presionado)
+    const burst = !prev ? now - t0 > 2500 : (r.rssi ?? -100) - (prev.rssi ?? -100) >= 8
+    found.set(id, {
+      device: r.device, name, uuids, rssi: r.rssi ?? prev?.rssi ?? -100, firstSeen: prev?.firstSeen || now, lastSeen: now,
+      activeAt: burst ? now : prev?.activeAt || 0, kind: guessKind(name, uuids)
+    })
+    if (!pending) pending = setTimeout(flush, 400)
   })
   const t = setTimeout(() => BleClient.stopLEScan().catch(() => {}), ms)
   return () => { clearTimeout(t); BleClient.stopLEScan().catch(() => {}) }
 }
 
+/** Tipo probable según el nombre y los servicios anunciados. */
+export function guessKind(name = '', uuids = []) {
+  const n = name.toLowerCase()
+  if (uuids.some((u) => u.startsWith('0000180d')) || /band|watch|reloj|mi smart|redmi|amazfit|galaxy fit|huawei|polar|garmin|fitbit|xiaomi/.test(n)) return 'pulsera'
+  if (/itag|tag|tracker|key|finder|llavero|smarttag|nut|tile/.test(n) || uuids.some((u) => u.startsWith('0000ffe0') || u.startsWith('00001802'))) return 'rastreador'
+  if (/shutter|selfie|remote|camera/.test(n)) return 'selfie'
+  return ''
+}
+
 /** Dispositivos ya emparejados en Ajustes del teléfono (Android). */
 export async function bondedDevices() {
-  try { await init(); return await BleClient.getBondedDevices() } catch { return [] }
+  try { await init(); const r = await BleClient.getBondedDevices(); return Array.isArray(r) ? r : [] } catch { return [] }
 }
 
 let lastPress = 0
@@ -122,6 +143,7 @@ async function subscribeAll(deviceId, log = () => {}) {
           await BleClient.startNotifications(deviceId, s.uuid, c.uuid, (v) => {
             const hr = parseHr(v)
             if (hr > 0) {
+              if (watchState.devices[deviceId]) watchState.devices[deviceId].hr = hr
               watchState.hr = hr
               watchState.hrSamples.push({ t: Date.now(), hr })
               if (watchState.hrSamples.length > 4000) watchState.hrSamples.shift()
@@ -132,7 +154,7 @@ async function subscribeAll(deviceId, log = () => {}) {
         } else if (c.uuid === BATTERY_LEVEL) {
           await BleClient.startNotifications(deviceId, s.uuid, c.uuid, (v) => { watchState.battery = v.getUint8(0); emit('battery', watchState.battery) })
         } else if (!IGNORE.includes(c.uuid)) {
-          await BleClient.startNotifications(deviceId, s.uuid, c.uuid, () => press(`ble ${short(c.uuid)}`))
+          await BleClient.startNotifications(deviceId, s.uuid, c.uuid, () => press(`${watchState.devices[deviceId]?.name || 'BLE'} · ${short(c.uuid)}`))
           buttons++
           log(`Escuchando botón en la característica ${short(c.uuid)}`)
         }
@@ -149,30 +171,57 @@ async function subscribeAll(deviceId, log = () => {}) {
   return { services: services.length, buttons }
 }
 
-function setConnected(device, connected) {
-  watchState.device = device
-  watchState.connected = connected
+function setConnected(device, connected, kind) {
+  const id = device?.deviceId
+  if (id) watchState.devices[id] = { ...(watchState.devices[id] || {}), name: device.name || watchState.devices[id]?.name || 'Dispositivo', kind: kind || watchState.devices[id]?.kind || '', connected }
+  const list = Object.values(watchState.devices)
+  watchState.connected = list.some((d) => d.connected)
+  watchState.device = list.some((d) => d.connected) ? { name: list.filter((d) => d.connected).map((d) => d.name).join(' + ') } : null
+  if (!list.some((d) => d.connected && d.hr)) watchState.hr = null
   emit('status', { ...watchState })
 }
 
+// Lista guardada de dispositivos (con migración del formato anterior de un solo reloj)
+export function savedDevices() {
+  try {
+    const list = JSON.parse(localStorage.getItem(STORE) || 'null')
+    if (Array.isArray(list)) return list
+    const old = JSON.parse(localStorage.getItem(OLD_STORE) || 'null')
+    return old ? [{ ...old, kind: 'pulsera' }] : []
+  } catch { return [] }
+}
+function saveDevice(d) {
+  const list = savedDevices().filter((x) => x.deviceId !== d.deviceId)
+  list.push(d)
+  localStorage.setItem(STORE, JSON.stringify(list))
+  localStorage.removeItem(OLD_STORE)
+}
+export async function removeDevice(deviceId) {
+  localStorage.setItem(STORE, JSON.stringify(savedDevices().filter((x) => x.deviceId !== deviceId)))
+  await BleClient.disconnect(deviceId).catch(() => {})
+  delete watchState.devices[deviceId]
+  setConnected(null, false)
+}
+
 /** Conecta a un dispositivo (de la búsqueda propia o del selector) mostrando cada paso en `log`. */
-export async function connectToDevice(device, log = () => {}) {
+export async function connectToDevice(device, log = () => {}, kind = '') {
   await init()
+  watchState.devices[device.deviceId] = { ...(watchState.devices[device.deviceId] || {}), name: device.name || 'Dispositivo', kind }
   log(`Conectando a ${device.name || device.deviceId}…`)
   try {
-    await withTimeout(BleClient.connect(device.deviceId, () => setConnected(device, false)), 20000, 'Tiempo agotado al conectar. Acerca el dispositivo y presiona su botón para despertarlo.')
+    await withTimeout(BleClient.connect(device.deviceId, () => setConnected(device, false, kind)), 20000, 'Tiempo agotado al conectar. Acerca el dispositivo y presiona su botón para despertarlo.')
   } catch (e) {
     // Algunos botones exigen emparejamiento (bond) antes de conectar
     if (isAndroid()) {
       log('Reintentando con emparejamiento…')
       await BleClient.createBond(device.deviceId, { timeout: 20000 }).catch(() => {})
-      await withTimeout(BleClient.connect(device.deviceId, () => setConnected(device, false)), 20000, e.message)
+      await withTimeout(BleClient.connect(device.deviceId, () => setConnected(device, false, kind)), 20000, e.message)
     } else throw e
   }
-  setConnected(device, true)
+  setConnected(device, true, kind)
   log('Conectado ✔')
   const r = await subscribeAll(device.deviceId, log)
-  localStorage.setItem(STORE, JSON.stringify({ deviceId: device.deviceId, name: device.name }))
+  saveDevice({ deviceId: device.deviceId, name: device.name || 'Dispositivo', kind: kind || guessKind(device.name) })
   if (!r.buttons && !watchState.hr) log('⚠️ El dispositivo no envía notificaciones de botón. Si es un control de selfie/teclado, emparéjalo en Ajustes de Bluetooth del teléfono: la app lo detecta como botón sin vincularlo aquí.')
   else log('✔ Listo: presiona el botón del dispositivo para probarlo')
   return r
@@ -188,33 +237,37 @@ export async function pairWatch(log = () => {}) {
   return device
 }
 
-async function connectDevice(device) {
-  await BleClient.connect(device.deviceId, () => setConnected(device, false))
-  setConnected(device, true)
-  await subscribeAll(device.deviceId)
-}
-
-/** Reconecta al último dispositivo vinculado (app nativa o navegadores que lo permitan). */
+/** Reconecta todos los dispositivos guardados que no estén conectados. */
+let reconnecting = false
 export async function reconnectWatch() {
-  const saved = JSON.parse(localStorage.getItem(STORE) || 'null')
-  if (!saved || watchState.connected) return false
+  const saved = savedDevices()
+  if (!saved.length || reconnecting) return false
+  reconnecting = true
   try {
     await init()
-    const [device] = await BleClient.getDevices([saved.deviceId])
-    if (!device) return false
-    await connectDevice(device)
+    const devices = await BleClient.getDevices(saved.map((d) => d.deviceId)).catch(() => [])
+    for (const d of saved) {
+      if (watchState.devices[d.deviceId]?.connected) continue
+      const dev = devices.find((x) => x.deviceId === d.deviceId) || { deviceId: d.deviceId, name: d.name }
+      try {
+        watchState.devices[d.deviceId] = { ...(watchState.devices[d.deviceId] || {}), name: d.name, kind: d.kind }
+        await withTimeout(BleClient.connect(d.deviceId, () => setConnected(dev, false, d.kind)), 12000, 'timeout')
+        setConnected({ ...dev, name: d.name }, true, d.kind)
+        await subscribeAll(d.deviceId)
+      } catch { setConnected({ ...dev, name: d.name }, false, d.kind) }
+    }
     return true
-  } catch { return false }
+  } catch { return false } finally { reconnecting = false }
 }
 
 export async function unpairWatch() {
-  const saved = JSON.parse(localStorage.getItem(STORE) || 'null')
-  localStorage.removeItem(STORE)
-  if (saved) await BleClient.disconnect(saved.deviceId).catch(() => {})
+  for (const d of savedDevices()) await BleClient.disconnect(d.deviceId).catch(() => {})
+  localStorage.removeItem(STORE); localStorage.removeItem(OLD_STORE)
+  watchState.devices = {}
   setConnected(null, false)
 }
 
-export const savedWatch = () => JSON.parse(localStorage.getItem(STORE) || 'null')
+export const savedWatch = () => savedDevices()[0] || null
 export { isNativeApp }
 
 

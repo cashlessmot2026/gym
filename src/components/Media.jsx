@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
-import { CheckCircle2, Download, ScanFace, SwitchCamera, Watch, Bluetooth, BluetoothOff, HeartPulse, Battery } from 'lucide-react'
+import { CheckCircle2, Download, ScanFace, SwitchCamera, Watch, Bluetooth, HeartPulse, Camera, Radar, Plus, X } from 'lucide-react'
 import { detectFace, faceQuality, loadFace, snapshot, drawBox, faceBackend } from '../lib/face'
-import { listenRemoteButton } from '../lib/remote'
-import { onWatch, pairWatch, unpairWatch, watchState, bleSupported, savedWatch, reconnectWatch, checkBle, openBleSettings, scanDevices, connectToDevice, bondedDevices, isNativeApp } from '../lib/watch'
+import { listenRemoteButton, listRemotes, saveRemote, removeRemote, keyLabel } from '../lib/remote'
+import { onWatch, pairWatch, watchState, bleSupported, reconnectWatch, checkBle, openBleSettings, scanDevices, connectToDevice, bondedDevices, isNativeApp, savedDevices, removeDevice } from '../lib/watch'
 import { Modal, Spinner, useToast } from './ui'
 
 // ---------- Cámara ----------
@@ -243,64 +243,75 @@ export function useWatch() {
   return s
 }
 
+const KIND = {
+  selfie: { label: 'Botón de selfie', icon: Camera, desc: 'Control remoto de cámara (sube el volumen al presionarlo).' },
+  rastreador: { label: 'Botón rastreador', icon: Radar, desc: 'Llavero tipo iTag / localizador Bluetooth con botón.' },
+  pulsera: { label: 'Pulsera o reloj', icon: Watch, desc: 'Xiaomi Smart Band, Amazfit, Galaxy, Polar…: pulso en vivo y controles de música.' }
+}
+
+/** Panel "Mis dispositivos": botones de selfie, rastreadores y pulseras agregados. */
 export function WatchPanel({ compact }) {
-  const toast = useToast()
   const s = useWatch()
-  const [busy, setBusy] = useState(false)
-  const saved = savedWatch()
-  const [scanner, setScanner] = useState(false)
-  // App: buscador propio con diagnóstico. Navegador: selector de Web Bluetooth.
-  const pair = async () => {
-    if (isNativeApp()) { setScanner(true); return }
-    setBusy(true)
-    try { const d = await pairWatch(); toast(`Vinculado: ${d.name || 'dispositivo'}`, 'success') } catch (e) { toast(e.message || 'No se pudo vincular', 'error') } finally { setBusy(false) }
-  }
-  const scannerModal = scanner && <BleScanner onClose={() => setScanner(false)} />
+  const [add, setAdd] = useState(false)
+  const [remotes, setRemotes] = useState(listRemotes())
+  const [, force] = useState(0)
+  const ble = savedDevices()
+  const modal = add && <AddDevice onClose={() => { setAdd(false); setRemotes(listRemotes()); force((x) => x + 1) }} />
+
   if (compact) {
+    const count = ble.length + remotes.length
     return <>
-      {s.connected
-        ? <span className="badge ok"><Watch size={12} /> {s.device?.name || 'Bluetooth'} {s.hr ? `· ${s.hr} lpm` : ''}</span>
-        : <button className="btn sm" onClick={pair} disabled={busy || !bleSupported()}>{busy ? <Spinner size={14} /> : <Bluetooth size={14} />} Vincular botón</button>}
-      {scannerModal}
+      {s.connected || remotes.length
+        ? <button className="btn sm" onClick={() => setAdd(true)}><Bluetooth size={14} className="ok" /> {count} disp.{s.hr ? ` · ${s.hr} lpm` : ''}</button>
+        : <button className="btn sm" onClick={() => setAdd(true)} disabled={!bleSupported() && !isNativeApp()}><Bluetooth size={14} /> Agregar botón</button>}
+      {modal}
     </>
   }
+
   return (
     <div className="card">
       <div className="row between">
-        <div className="row"><Watch className="y" /><h3 style={{ margin: 0 }}>Botón / dispositivo Bluetooth</h3></div>
-        {s.connected ? <span className="badge ok">Conectado</span> : <span className="badge">Desconectado</span>}
+        <div className="row"><Bluetooth className="y" /><h3 style={{ margin: 0 }}>Mis dispositivos</h3></div>
+        <button className="btn sm primary" onClick={() => setAdd(true)}><Plus size={14} /> Agregar</button>
       </div>
-      <p className="small muted">Detén el contador sin tocar el teléfono con <b>cualquier dispositivo Bluetooth que tenga un botón</b>:</p>
-      <ul className="small muted" style={{ paddingLeft: 18, marginTop: 0 }}>
-        <li><b>Control de selfie, auriculares, teclado o pulsador:</b> emparéjalo en los ajustes de Bluetooth del teléfono. No hace falta nada más.</li>
-        <li><b>Botón BLE (tipo iTag), banda o reloj con pulso:</b> vincúlalo aquí abajo. También muestra tu frecuencia cardiaca.</li>
-        <li><b>Smartwatch (Wear OS, Galaxy, Apple Watch):</b> usa los controles de música del reloj. Pausa/Play pausa el contador; Siguiente completa la serie.</li>
-      </ul>
-      {s.connected && (
-        <div className="row wrap mb">
-          <span className="badge y">{s.device?.name || 'Dispositivo'}</span>
-          {s.hr && <span className="hr-live"><HeartPulse size={16} /> {s.hr} lpm</span>}
-          {s.battery != null && <span className="badge"><Battery size={12} /> {s.battery}%</span>}
-        </div>
-      )}
-      {!bleSupported() && <p className="tiny warn">Bluetooth no disponible en este navegador: usa la app nativa Android o Chrome.</p>}
-      <div className="row wrap">
-        <button className="btn primary" onClick={pair} disabled={busy || !bleSupported()}>{busy ? <Spinner /> : <Bluetooth size={16} />} {s.connected || saved ? 'Vincular otro' : 'Vincular dispositivo BLE'}</button>
-        {(s.connected || saved) && <button className="btn ghost" onClick={unpairWatch}><BluetoothOff size={16} /> Desvincular</button>}
+      <p className="small muted">Detén el contador presionando un botón de selfie, un rastreador o tu pulsera, sin tocar el teléfono.</p>
+      <div className="col" style={{ gap: 8 }}>
+        {remotes.map((r) => (
+          <div key={r.descriptor || r.name} className="row device-row">
+            <div className="ex-img" style={{ width: 38, height: 38 }}><Camera size={18} /></div>
+            <div className="grow"><b className="small">{r.name || 'Botón de selfie'}</b><div className="tiny muted">Botón de selfie · {keyLabel(r.key)}</div></div>
+            <span className="badge ok">Listo</span>
+            <button className="icon-btn" title="Quitar" onClick={() => setRemotes(removeRemote(r.descriptor || r.name))}><X size={16} /></button>
+          </div>
+        ))}
+        {ble.map((d) => {
+          const st = s.devices?.[d.deviceId]
+          const K = KIND[d.kind] || KIND.rastreador
+          return (
+            <div key={d.deviceId} className="row device-row">
+              <div className="ex-img" style={{ width: 38, height: 38 }}><K.icon size={18} /></div>
+              <div className="grow"><b className="small">{d.name}</b><div className="tiny muted">{K.label}{st?.hr ? ` · ❤️ ${st.hr} lpm` : ''}</div></div>
+              <span className={`badge ${st?.connected ? 'ok' : ''}`}>{st?.connected ? 'Conectado' : 'Desconectado'}</span>
+              <button className="icon-btn" title="Quitar" onClick={async () => { await removeDevice(d.deviceId); force((x) => x + 1) }}><X size={16} /></button>
+            </div>
+          )
+        })}
+        {!remotes.length && !ble.length && <p className="tiny muted center" style={{ margin: 6 }}>Aún no has agregado dispositivos.</p>}
       </div>
+      {ble.length > 0 && !s.connected && <button className="btn sm mt" onClick={() => reconnectWatch().then(() => force((x) => x + 1))}><Bluetooth size={14} /> Reconectar</button>}
       <ButtonTester />
-      {scannerModal}
+      {modal}
     </div>
   )
 }
 
-/** Probador: muestra si la app recibe el botón del control / reloj / dispositivo. */
+/** Probador: muestra si la app recibe el botón y de qué dispositivo viene. */
 function ButtonTester() {
   const [on, setOn] = useState(false)
   const [hits, setHits] = useState([])
   useEffect(() => {
     if (!on) return
-    const off = listenRemoteButton((src) => setHits((h) => [{ src, t: new Date() }, ...h].slice(0, 4)))
+    const off = listenRemoteButton((src, info) => setHits((h) => [{ src, info, t: new Date() }, ...h].slice(0, 4)))
     const t = setTimeout(() => setOn(false), 20000)
     return () => { off(); clearTimeout(t) }
   }, [on])
@@ -311,52 +322,136 @@ function ButtonTester() {
         <button type="button" className={`btn sm ${on ? 'primary' : ''}`} onClick={() => { setHits([]); setOn(!on) }}>{on ? 'Escuchando… (20 s)' : 'Iniciar prueba'}</button>
       </div>
       {on && !hits.length && <p className="tiny muted">Presiona el botón de tu dispositivo ahora.</p>}
-      {hits.map((h, i) => <div key={i} className="tiny ok">✔ Botón detectado ({h.src}) · {h.t.toLocaleTimeString('es')}</div>)}
+      {hits.map((h, i) => <div key={i} className="tiny ok">✔ {h.info?.device || h.src}{h.info?.key ? ` · ${keyLabel(h.info.key)}` : ''} · {h.t.toLocaleTimeString('es')}</div>)}
     </div>
   )
 }
 
-/** Buscador Bluetooth de la app: lista en vivo, conexión con registro de pasos y controles emparejados. */
-function BleScanner({ onClose }) {
+/** Asistente para agregar un dispositivo según su tipo. */
+function AddDevice({ onClose }) {
+  const [kind, setKind] = useState(null)
+  return (
+    <Modal title={kind ? `Agregar ${KIND[kind].label.toLowerCase()}` : 'Agregar dispositivo'} onClose={onClose}>
+      {!kind && (
+        <div className="col">
+          {Object.entries(KIND).map(([k, v]) => (
+            <button key={k} className="ex" style={{ textAlign: 'left', width: '100%' }} onClick={() => setKind(k)}>
+              <div className="ex-img"><v.icon size={22} /></div>
+              <div className="grow"><b>{v.label}</b><div className="tiny muted">{v.desc}</div></div>
+            </button>
+          ))}
+          {!isNativeApp() && <p className="tiny warn">En el navegador sólo funcionan los controles que actúan como teclado y los dispositivos BLE compatibles con Chrome. Para todo, usa la app Android.</p>}
+        </div>
+      )}
+      {kind === 'selfie' && <SelfieFlow onDone={onClose} />}
+      {kind === 'rastreador' && <BleScanner kind="rastreador" onDone={onClose} />}
+      {kind === 'pulsera' && <BleScanner kind="pulsera" onDone={onClose} />}
+      {kind && <button className="btn ghost block mt" onClick={() => setKind(null)}>← Elegir otro tipo</button>}
+    </Modal>
+  )
+}
+
+/**
+ * Botón de selfie: se empareja en Ajustes de Bluetooth (funciona como teclado y envía "subir volumen")
+ * y la app lo agrega al detectar la pulsación, identificándolo por su nombre.
+ */
+function SelfieFlow({ onDone }) {
+  const toast = useToast()
+  const [bonded, setBonded] = useState([])
+  const [hit, setHit] = useState(null)
+  useEffect(() => { bondedDevices().then((r) => setBonded(r || [])) }, [])
+  useEffect(() => {
+    const off = listenRemoteButton((src, info) => { if (src !== 'ble') setHit({ ...info, src }) })
+    return off
+  }, [])
+  const addIt = () => {
+    saveRemote({ name: hit.device || 'Botón de selfie', key: hit.key, descriptor: hit.descriptor || hit.device || hit.key })
+    toast(`Agregado: ${hit.device || 'botón de selfie'}`, 'success'); onDone()
+  }
+  const selfies = (bonded || []).filter((b) => /shutter|selfie|remote|camera|bt/i.test(b.name || ''))
+  return (
+    <div className="col">
+      <div className="step"><span className="step-n">1</span><div className="grow">
+        <b className="small">Emparéjalo en el teléfono</b>
+        <div className="tiny muted">Enciéndelo (suele titilar una luz azul) y en <b>Ajustes → Bluetooth</b> toca su nombre (por ejemplo "AB Shutter3"). No necesita contraseña.</div>
+        {isNativeApp() && <button className="btn sm mt" onClick={() => openBleSettings('bluetooth')}>Abrir ajustes de Bluetooth</button>}
+        {selfies.length > 0 && <div className="tiny ok mt">✔ Emparejado: {selfies.map((b) => b.name).join(', ')}</div>}
+      </div></div>
+      <div className={`step ${hit ? 'done' : 'active'}`}><span className="step-n">2</span><div className="grow">
+        <b className="small">Presiona el botón ahora</b>
+        {!hit
+          ? <div className="tiny muted"><Spinner size={12} /> Esperando la pulsación… (la app captura "subir volumen" para que no cambie el volumen)</div>
+          : <div className="small ok">✔ Detectado: <b>{hit.device || 'control Bluetooth'}</b> · {keyLabel(hit.key)}</div>}
+      </div></div>
+      <button className="btn primary block" disabled={!hit} onClick={addIt}><Plus size={16} /> Agregar este botón</button>
+      {!isNativeApp() && <p className="tiny muted">En el navegador el volumen no llega a la web: si tu botón sólo sube el volumen, usa la app Android.</p>}
+    </div>
+  )
+}
+
+/** Buscador BLE de la app (rastreadores y pulseras): lista en vivo, resalta el que se presiona y conecta. */
+function BleScanner({ kind, onDone }) {
   const toast = useToast()
   const [check, setCheck] = useState(null)
   const [list, setList] = useState([])
   const [scanning, setScanning] = useState(false)
   const [log, setLog] = useState([])
   const [busy, setBusy] = useState(null)
-  const [bonded, setBonded] = useState([])
+  const [connected, setConnected] = useState(null)
   const [presses, setPresses] = useState(0)
+  const [now, setNow] = useState(Date.now())
   const stopRef = useRef(null)
   const add = (t) => setLog((l) => [...l, t])
 
   const start = async () => {
     setLog([]); setList([])
+    if (!isNativeApp()) {
+      // Navegador: selector de Web Bluetooth
+      try { const d = await pairWatch(add); setConnected(d) } catch (e) { add('❌ ' + (e.message || 'Cancelado')) }
+      return
+    }
     const c = await checkBle()
     setCheck(c)
     if (!c.ok) return
-    bondedDevices().then(setBonded)
     try {
       setScanning(true)
-      stopRef.current = await scanDevices(setList, 15000)
-      setTimeout(() => setScanning(false), 15000)
+      stopRef.current = await scanDevices(setList, 25000)
+      setTimeout(() => setScanning(false), 25000)
     } catch (e) { setScanning(false); add('⚠️ No se pudo buscar: ' + (e.message || e)) }
   }
   useEffect(() => { start(); return () => stopRef.current?.() }, [])
   useEffect(() => onWatch('button', () => setPresses((n) => n + 1)), [])
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 500); return () => clearInterval(t) }, [])
 
   const connect = async (d) => {
     stopRef.current?.(); setScanning(false)
-    setBusy(d.device.deviceId); setLog([])
-    try { await connectToDevice({ ...d.device, name: d.name || d.device.name }, add); toast('Dispositivo vinculado', 'success') }
-    catch (e) { add('❌ ' + (e.message || 'No se pudo conectar')) }
-    finally { setBusy(null) }
+    setBusy(d.device.deviceId); setLog([]); setPresses(0)
+    try {
+      await connectToDevice({ ...d.device, name: d.name || d.device.name || KIND[kind].label }, add, kind)
+      setConnected(d)
+      toast('Dispositivo agregado', 'success')
+    } catch (e) { add('❌ ' + (e.message || 'No se pudo conectar')) } finally { setBusy(null) }
   }
   const bars = (rssi) => (rssi > -60 ? 4 : rssi > -70 ? 3 : rssi > -80 ? 2 : 1)
+  // Pulseras primero si se busca pulsera; rastreadores primero si se busca rastreador
+  const sorted = [...list].sort((a, b) => ((now - b.activeAt < 4000) - (now - a.activeAt < 4000)) || ((b.kind === kind) - (a.kind === kind)) || b.rssi - a.rssi)
 
   return (
-    <Modal title="Vincular dispositivo Bluetooth" onClose={() => { stopRef.current?.(); onClose() }}>
+    <div className="col">
+      {kind === 'rastreador' && <div className="tiny muted">Presiona el botón del rastreador mientras busca: el que se active aparecerá arriba marcado como <b className="y">¡Presionado!</b>. Si lo usabas con otra app (iTag, Tile…), desvincúlalo allí primero.</div>}
+      {kind === 'pulsera' && (
+        <div className="card" style={{ background: 'var(--bg2)', padding: 12 }}>
+          <b className="small">Xiaomi Smart Band 9 Active y similares</b>
+          <ol className="tiny muted" style={{ paddingLeft: 18, margin: '6px 0 0' }}>
+            <li>En la pulsera o en la app <b>Mi Fitness</b>, activa <b>"Compartir frecuencia cardíaca"</b> (Heart rate broadcast / data sharing).</li>
+            <li>Inicia un entrenamiento en la pulsera si no aparece: muchas sólo transmiten el pulso durante un ejercicio.</li>
+            <li>Toca la pulsera en la lista. La app leerá tu pulso en vivo.</li>
+            <li>Para detener el contador desde la pulsera usa su <b>control de música</b> (Pausa/Play/Siguiente). La pantalla de "cámara remota" de la pulsera sólo funciona con la app de cámara.</li>
+          </ol>
+        </div>
+      )}
       {check && !check.ok && (
-        <div className="card hl mb">
+        <div className="card hl">
           <b className="small">{check.msg}</b>
           <div className="row wrap mt" style={{ gap: 6 }}>
             <button className="btn sm primary" onClick={() => openBleSettings(check.problem)}>Abrir ajustes</button>
@@ -364,33 +459,44 @@ function BleScanner({ onClose }) {
           </div>
         </div>
       )}
-      <div className="row between mb">
-        <span className="small muted">{scanning ? <><Spinner size={12} /> Buscando… presiona el botón del dispositivo para despertarlo</> : `${list.length} dispositivos encontrados`}</span>
-        <button className="btn sm" onClick={start} disabled={scanning}>Buscar de nuevo</button>
-      </div>
-      <div className="col" style={{ gap: 6, maxHeight: '38vh', overflowY: 'auto' }}>
-        {list.map((d) => (
-          <button key={d.device.deviceId} className="ex" style={{ textAlign: 'left', width: '100%' }} disabled={!!busy} onClick={() => connect(d)}>
-            <div className="ex-img" style={{ width: 40, height: 40 }}><Bluetooth size={18} /></div>
-            <div className="grow"><div style={{ fontWeight: 700 }}>{d.name || 'Sin nombre'}</div><div className="tiny muted">{d.device.deviceId}</div></div>
-            <span className="tiny muted">{'▮'.repeat(bars(d.rssi))}{'▯'.repeat(4 - bars(d.rssi))}</span>
-            {busy === d.device.deviceId && <Spinner size={16} />}
-          </button>
-        ))}
-        {!list.length && check?.ok && !scanning && <p className="tiny muted center">No se encontró nada. Acércalo, presiona su botón y busca de nuevo. Si el botón ya está emparejado con otro teléfono o app, desemparéjalo primero.</p>}
-      </div>
+      {isNativeApp() && !connected && (
+        <>
+          <div className="row between">
+            <span className="small muted">{scanning ? <><Spinner size={12} /> Buscando…</> : `${list.length} encontrados`}</span>
+            <button className="btn sm" onClick={start} disabled={scanning}>Buscar de nuevo</button>
+          </div>
+          <div className="col" style={{ gap: 6, maxHeight: '36vh', overflowY: 'auto' }}>
+            {sorted.map((d) => {
+              const active = now - d.activeAt < 4000
+              return (
+                <button key={d.device.deviceId} className={`ex ${active ? 'pulse-on' : ''}`} style={{ textAlign: 'left', width: '100%' }} disabled={!!busy} onClick={() => connect(d)}>
+                  <div className="ex-img" style={{ width: 40, height: 40 }}>{d.kind === 'pulsera' ? <Watch size={18} /> : d.kind === 'rastreador' ? <Radar size={18} /> : <Bluetooth size={18} />}</div>
+                  <div className="grow">
+                    <div style={{ fontWeight: 700 }}>{d.name || 'Sin nombre'} {active && <span className="badge y">¡Presionado!</span>}</div>
+                    <div className="tiny muted">{d.kind ? KIND[d.kind].label + ' · ' : ''}{d.device.deviceId}</div>
+                  </div>
+                  <span className="tiny muted">{'▮'.repeat(bars(d.rssi))}{'▯'.repeat(4 - bars(d.rssi))}</span>
+                  {busy === d.device.deviceId && <Spinner size={16} />}
+                </button>
+              )
+            })}
+            {!list.length && check?.ok && !scanning && <p className="tiny muted center">No se encontró nada. Acércalo, presiona su botón y busca de nuevo.</p>}
+          </div>
+        </>
+      )}
       {log.length > 0 && (
-        <div className="card mt" style={{ background: 'var(--bg2)', padding: 12 }}>
+        <div className="card" style={{ background: 'var(--bg2)', padding: 12 }}>
           {log.map((l, i) => <div key={i} className="tiny" style={{ padding: '2px 0' }}>{l}</div>)}
-          {presses > 0 && <div className="small ok mt">✔ Botón detectado {presses} {presses === 1 ? 'vez' : 'veces'}</div>}
+          {connected && kind === 'rastreador' && <div className={`small mt ${presses ? 'ok' : 'muted'}`}>{presses ? `✔ Botón detectado ${presses} ${presses === 1 ? 'vez' : 'veces'}` : 'Presiona el botón del rastreador para confirmar…'}</div>}
+          {connected && kind === 'pulsera' && <HrLive />}
         </div>
       )}
-      {bonded.length > 0 && (
-        <div className="mt">
-          <div className="tiny muted mb">Emparejados en Ajustes del teléfono (controles de selfie, teclados, auriculares). Estos funcionan como botón sin vincularlos aquí; pruébalos con "Probar botón":</div>
-          {bonded.map((b) => <div key={b.deviceId} className="tiny">• {b.name || b.deviceId}</div>)}
-        </div>
-      )}
-    </Modal>
+      {connected && <button className="btn primary block" onClick={onDone}><CheckCircle2 size={16} /> Listo</button>}
+    </div>
   )
+}
+
+function HrLive() {
+  const s = useWatch()
+  return <div className={`small mt ${s.hr ? 'ok' : 'muted'}`}>{s.hr ? <span className="hr-live"><HeartPulse size={14} /> {s.hr} lpm en vivo</span> : 'Esperando pulso… activa "Compartir frecuencia cardíaca" en la pulsera.'}</div>
 }

@@ -1,5 +1,7 @@
 package com.ironyellow.gym;
 
+import android.os.Build;
+import android.view.InputDevice;
 import android.view.KeyEvent;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -65,6 +67,13 @@ public class RemoteButtonPlugin extends Plugin {
         if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
             JSObject data = new JSObject();
             data.put("key", KeyEvent.keyCodeToString(event.getKeyCode()));
+            // Identifica qué control envió la tecla (nombre Bluetooth del botón de selfie, teclado, etc.)
+            InputDevice dev = event.getDevice();
+            if (dev != null) {
+                data.put("device", dev.getName());
+                data.put("descriptor", dev.getDescriptor());
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) data.put("external", dev.isExternal());
+            }
             instance.notifyListeners("press", data);
         }
         return true;
