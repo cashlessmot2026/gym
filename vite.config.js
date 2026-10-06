@@ -21,6 +21,7 @@ export default defineConfig({
         ]
       },
       workbox: {
+        importScripts: ['push-sw.js'],
         maximumFileSizeToCacheInBytes: 12 * 1024 * 1024,
         globPatterns: ['**/*.{js,css,html,svg,png,json,bin,woff2}'],
         navigateFallback: '/index.html',

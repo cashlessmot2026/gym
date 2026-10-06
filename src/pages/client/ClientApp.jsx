@@ -11,6 +11,7 @@ import BodyMetrics from '../../components/BodyMetrics'
 import NutritionAI from '../../components/NutritionAI'
 import ExerciseBrowser from '../../components/ExerciseBrowser'
 import { QRImage, WatchPanel } from '../../components/Media'
+import { usePushInbox, PushBanner, NotificationBell, PushOptIn } from '../../components/Notifications'
 import Onboarding from './Onboarding'
 import Training from './Training'
 
@@ -55,20 +56,36 @@ export default function ClientApp() {
 
   if (!me.onboarded) return <Onboarding member={me} types={types} onSave={saveProfile} />
 
+  return <ClientMain me={me} status={status} types={types} tab={tab} setTab={setTab} saveProfile={saveProfile} onLogout={() => { clearSession('member'); setMe(null) }} />
+}
+
+function ClientMain({ me, status, types, tab, setTab, saveProfile, onLogout }) {
+  // Abre el destino de una notificación: pestaña interna (?tab=...) o enlace externo
+  const openUrl = (url) => {
+    if (!url) return
+    if (/^https?:/i.test(url) && !url.startsWith(location.origin)) { window.open(url, '_blank', 'noopener'); return }
+    const t = new URL(url, location.origin).searchParams.get('tab')
+    if (t && NAV.some((n) => n.id === t)) setTab(t)
+  }
+  const inbox = usePushInbox(me, openUrl)
+  useEffect(() => { openUrl(location.href) }, [])
+
   const first = me.full_name.split(' ')[0]
+  const bell = <NotificationBell inbox={inbox} onOpen={openUrl} />
   return (
-    <Shell sub="MI ENTRENAMIENTO" nav={NAV} value={tab} onChange={setTab} user={me} onLogout={() => { clearSession('member'); setMe(null) }}>
-      {tab === 'train' && <><PageTitle a="HOLA," b={first.toUpperCase()}><WatchPanel compact /></PageTitle><Training member={me} status={status} types={types} /></>}
-      {tab === 'progress' && <><PageTitle a="MI" b="PROGRESO" /><MemberAnalytics memberId={me.id} /></>}
-      {tab === 'body' && <><PageTitle a="MEDIDAS" b="E IMC" /><BodyMetrics member={me} /></>}
-      {tab === 'nutri' && <><PageTitle a="NUTRICIONISTA" b="IA" /><NutritionAI member={me} /></>}
-      {tab === 'library' && <><PageTitle a="EJERCICIOS" b="POR MODALIDAD" /><ExerciseBrowser types={types} initialType={me.training_modes?.[0]} /></>}
-      {tab === 'profile' && <Profile me={me} status={status} types={types} onSave={saveProfile} />}
+    <Shell sub="MI ENTRENAMIENTO" nav={NAV} value={tab} onChange={setTab} user={me} onLogout={onLogout}>
+      <PushBanner n={inbox.banner} onClose={inbox.closeBanner} onOpen={openUrl} />
+      {tab === 'train' && <><PageTitle a="HOLA," b={first.toUpperCase()}><WatchPanel compact />{bell}</PageTitle><div className="mb"><PushOptIn member={me} compact /></div><Training member={me} status={status} types={types} /></>}
+      {tab === 'progress' && <><PageTitle a="MI" b="PROGRESO">{bell}</PageTitle><MemberAnalytics memberId={me.id} /></>}
+      {tab === 'body' && <><PageTitle a="MEDIDAS" b="E IMC">{bell}</PageTitle><BodyMetrics member={me} /></>}
+      {tab === 'nutri' && <><PageTitle a="NUTRICIONISTA" b="IA">{bell}</PageTitle><NutritionAI member={me} /></>}
+      {tab === 'library' && <><PageTitle a="EJERCICIOS" b="POR MODALIDAD">{bell}</PageTitle><ExerciseBrowser types={types} initialType={me.training_modes?.[0]} /></>}
+      {tab === 'profile' && <Profile me={me} status={status} types={types} onSave={saveProfile} bell={bell} />}
     </Shell>
   )
 }
 
-function Profile({ me, status, types, onSave }) {
+function Profile({ me, status, types, onSave, bell }) {
   const toast = useToast()
   const [hist, setHist] = useState([])
   const [edit, setEdit] = useState(false)
@@ -84,6 +101,7 @@ function Profile({ me, status, types, onSave }) {
   return (
     <>
       <PageTitle a="MI" b="PERFIL">
+        {bell}
         <button className="btn" onClick={() => setPw({ a: '', b: '' })}><KeyRound size={16} /> Contraseña</button>
         <button className="btn primary" onClick={() => setEdit(true)}><Pencil size={16} /> Objetivo y modalidades</button>
       </PageTitle>
@@ -101,7 +119,7 @@ function Profile({ me, status, types, onSave }) {
           <QRImage value={me.qr_code} name={me.full_name} size={180} />
           <p className="tiny muted center">Muestra este QR en recepción o usa tu tag NFC {me.nfc_uid ? '(asignado ✅)' : '(sin asignar)'}.</p>
         </div>
-        <WatchPanel />
+        <div className="col"><WatchPanel /><PushOptIn member={me} /></div>
       </div>
       <div className="card mt">
         <h3>Historial de membresías</h3>

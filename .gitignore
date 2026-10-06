@@ -5,3 +5,4 @@ android
 ios
 .env.local
 *.log
+.env.vapid.json

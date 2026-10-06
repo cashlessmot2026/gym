@@ -25,6 +25,23 @@ supabase functions deploy nutri-ai --no-verify-jwt
 ```
 Si la función no está desplegada, la app usa un motor local basado en las guías ISSN, ACSM y OMS.
 
+### 2b. Notificaciones push y promociones
+1. Ejecuta [`supabase/02_push.sql`](supabase/02_push.sql) en el SQL Editor. Crea las tablas, activa Realtime y crea el bucket `promos` para las imágenes.
+2. Configura las claves VAPID. La privada está en `.env.vapid.json`, que solo existe en el PC donde se generó y **nunca se sube a git**:
+   ```bash
+   supabase secrets set VAPID_PUBLIC_KEY=<publicKey> VAPID_PRIVATE_KEY=<privateKey> VAPID_SUBJECT=mailto:tu@correo.com
+   supabase functions deploy send-push --no-verify-jwt
+   ```
+3. Para la app nativa Android, crea un proyecto en Firebase y copia `google-services.json` a `android/app/`. Luego configura la cuenta de servicio:
+   `supabase secrets set FCM_SERVICE_ACCOUNT="$(cat service-account.json)"`
+
+Cómo funciona:
+- **App abierta**: Supabase Realtime muestra un banner interno al instante y actualiza la campana con la bandeja.
+- **App cerrada o en segundo plano**: el Service Worker (`public/push-sw.js`) muestra la notificación del sistema. En Android nativo se usa FCM.
+- **Panel del admin** (`/admin → Promociones push`): plantillas, imagen, destino (una pestaña de la app o un enlace externo), audiencia (todos, activos, por vencer, vencidos, por modalidad o clientes específicos), vista previa en un teléfono e historial con las entregas.
+- Si `send-push` no está desplegada, la campaña igual aparece dentro de la app.
+- En iPhone, el push web solo funciona con la app instalada en la pantalla de inicio (iOS 16.4+).
+
 ### 3. Ejecutar
 ```bash
 npm install
