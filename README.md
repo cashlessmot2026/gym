@@ -1,0 +1,52 @@
+# IronYellow Gym 🟨⬛
+
+Una sola app en React (Vite) para gestionar un gimnasio y hacer seguimiento de entrenamientos. Funciona como **PWA instalable y offline** y como **app nativa Android** (Capacitor). Usa Supabase como base de datos.
+
+## Interfaces
+
+| URL | Para quién | Qué hace |
+|---|---|---|
+| `/` | Cliente | Primero elige su objetivo, sus modalidades y su nivel. Luego ve los días que le quedan de membresía y los ejercicios de cada día de la semana, agrupados por músculo. Cada ejercicio tiene un contador de series, repeticiones, trabajo y descanso. Al terminar ve las estadísticas del día. También tiene IMC y medidas, nutricionista IA con descarga en PDF, biblioteca de ejercicios en internet, su QR y la vinculación del smartwatch. |
+| `/admin` (oculta) | Administrador | Dashboard, inscripciones (QR, botón **Asignar NFC**, registro facial), membresías, vencimientos y renovaciones, planes, asistencia, usuarios de coaches y personal, y modalidades editables. |
+| `/coach` | Entrenadores | Ven a todos los clientes y su perfil, asignan ejercicios o rutinas por día, crean rutinas y grupos (el grupo carga los ejercicios a todos sus miembros automáticamente), buscan ejercicios en internet y ven la analítica. |
+| `/check` | Recepción | Registra la asistencia por cédula, QR, NFC (botón de encendido/apagado de 5 s y lector USB) o reconocimiento facial. |
+
+## Instalación
+
+### 1. Base de datos (Supabase)
+1. En el Dashboard de Supabase abre **SQL Editor → New query**.
+2. Pega todo el contenido de [`supabase/schema.sql`](supabase/schema.sql) y pulsa **Run**.
+3. Usuario inicial: **admin** / **admin123**. Cámbialo enseguida en `/admin → Coaches y personal`.
+
+### 2. Nutricionista IA (opcional, con Claude)
+```bash
+supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
+supabase functions deploy nutri-ai --no-verify-jwt
+```
+Si la función no está desplegada, la app usa un motor local basado en las guías ISSN, ACSM y OMS.
+
+### 3. Ejecutar
+```bash
+npm install
+npm run dev        # desarrollo
+npm run build      # build de producción (PWA)
+```
+La conexión a Supabase ya viene configurada. Para cambiarla, copia `.env.example` a `.env.local`.
+
+### 4. App nativa Android
+```bash
+npx cap add android
+npm run cap:android   # compila, sincroniza y abre Android Studio
+```
+Agrega en `android/app/src/main/AndroidManifest.xml` los permisos de cámara y Bluetooth (`CAMERA`, `BLUETOOTH_SCAN`, `BLUETOOTH_CONNECT`).
+
+## Tecnología
+- **Autenticación propia**: las contraseñas se validan en la base de datos y se guardan cifradas con bcrypt (`pgcrypto`) en la tabla `credentials`, que no se puede leer desde el cliente. Para recuperar una contraseña se escribe el correo; a los 3 s aparece una clave temporal nueva con un botón para copiarla.
+- **Reconocimiento facial**: `@vladmandic/face-api` (SSD MobileNet, 68 landmarks y descriptor ResNet de 128 dimensiones). Toma 5 muestras con control de calidad (luz, tamaño, rostro de frente). La validación usa un umbral estricto de 0.45, exige un margen frente al segundo candidato y 3 confirmaciones seguidas. Los modelos se sirven en local (`/public/models`).
+- **NFC**: Web NFC (Chrome en Android) para leer el UID y escribir el código del socio en el tag. También acepta lectores USB que funcionan como teclado.
+- **Smartwatch**: `@capacitor-community/bluetooth-le` (nativo y Web Bluetooth). Muestra la frecuencia cardiaca en vivo (servicio estándar 0x180D). Cualquier botón BLE del reloj detiene el contador. Los controles multimedia del reloj (Pausa, Play, Siguiente) también manejan el temporizador.
+- **Fórmulas**: IMC y categorías de la OMS, metabolismo basal con Mifflin-St Jeor, gasto diario (TMB × factor de actividad), % de grasa con el método US Navy, índices cintura/cadera y cintura/estatura, y macros según ISSN.
+- **Ejercicios en internet**: API pública de [wger.de](https://wger.de) y un catálogo curado por modalidad con enlaces a videos de técnica.
+- **Gráficas**: Recharts. **PDF**: jsPDF + autotable. **QR**: `qrcode` y `html5-qrcode`.
+
+> ⚠️ Mientras no exista login con Google, las tablas de negocio se acceden con la anon key (RLS permisivo). Las credenciales están protegidas. Al migrar a Supabase Auth hay que restringir las políticas por rol.

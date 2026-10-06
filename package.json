@@ -1,0 +1,35 @@
+{
+  "name": "ironyellow-gym",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build",
+    "preview": "vite preview --host",
+    "cap:sync": "vite build && npx cap sync",
+    "cap:android": "vite build && npx cap sync android && npx cap open android"
+  },
+  "dependencies": {
+    "@capacitor-community/bluetooth-le": "^8.3.0",
+    "@capacitor/core": "^8.5.2",
+    "@supabase/supabase-js": "^2.117.2",
+    "@vladmandic/face-api": "^1.7.15",
+    "html5-qrcode": "^2.3.8",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
+    "lucide-react": "^1.52.0",
+    "qrcode": "^1.5.4",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-router-dom": "^7.18.4",
+    "recharts": "^3.10.1"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/cli": "^8.5.2",
+    "@vitejs/plugin-react": "^6.1.2",
+    "vite": "^8.3.2",
+    "vite-plugin-pwa": "^2.0.0"
+  }
+}
