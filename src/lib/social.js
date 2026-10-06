@@ -1,11 +1,20 @@
-// Comunidad tipo Instagram: publicaciones (solo imágenes, en Google Drive),
+// Comunidad tipo Instagram: publicaciones (solo imágenes, en Cloudflare R2 / Google Drive),
 // "me gusta" y seguir.
 import { supabase, q, SUPABASE_URL, SUPABASE_ANON_KEY } from './supabase'
 
 export const PAGE = 10
 
-/** URL directa de una imagen pública de Drive. */
-export const driveImg = (id, w = 1080) => (id ? `https://lh3.googleusercontent.com/d/${id}=w${w}` : null)
+// Fotos nuevas: Cloudflare R2 (ids "r2:<ruta>"). Fotos antiguas: Google Drive (id de archivo).
+// R2 se activa cuando existe la URL pública del bucket (VITE_R2_PUBLIC_URL o, si no, el valor fijo de esta línea).
+export const R2_PUBLIC_URL = (import.meta.env.VITE_R2_PUBLIC_URL || '').replace(/\/$/, '')
+const isR2 = (id) => typeof id === 'string' && id.startsWith('r2:')
+
+/** URL directa de una imagen pública (R2 o Drive). */
+export const driveImg = (id, w = 1080) => {
+  if (!id) return null
+  if (isR2(id)) return R2_PUBLIC_URL ? `${R2_PUBLIC_URL}/${id.slice(3)}` : null
+  return `https://lh3.googleusercontent.com/d/${id}=w${w}`
+}
 
 const MEMBER = 'member:members!posts_member_id_fkey(id, full_name, photo, goal, active)'
 
@@ -81,27 +90,30 @@ export async function squareJpeg(file, size, quality = 0.82) {
   return c.toDataURL('image/jpeg', quality).split(',')[1]
 }
 
-async function driveCall(body) {
-  const r = await fetch(`${SUPABASE_URL}/functions/v1/drive-upload`, {
+async function driveCall(body, fn = 'drive-upload') {
+  const r = await fetch(`${SUPABASE_URL}/functions/v1/${fn}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
     body: JSON.stringify(body)
   })
   const d = await r.json().catch(() => ({}))
-  if (!r.ok) throw new Error(d.error || (r.status === 404 ? 'Falta desplegar la función drive-upload en Supabase' : `Error ${r.status} al subir la imagen`))
+  if (!r.ok) throw new Error(d.error || (r.status === 404 ? `Falta desplegar la función ${fn} en Supabase` : `Error ${r.status} al subir la imagen`))
   return d
 }
 
 export async function createPost(me, file, caption) {
   if (!file.type.startsWith('image/')) throw new Error('Solo se pueden publicar imágenes')
   const [image, thumb] = await Promise.all([squareJpeg(file, 1080), squareJpeg(file, 320, 0.75)])
-  const { drive_id, thumb_id } = await driveCall({ action: 'upload', member_id: me.id, image, thumb })
+  const { drive_id, thumb_id } = await driveCall({ action: 'upload', member_id: me.id, image, thumb }, R2_PUBLIC_URL ? 'r2-upload' : 'drive-upload')
   return (await q(supabase.from('posts').insert({ member_id: me.id, drive_id, thumb_id, caption: caption?.trim() || null }).select(`*, ${MEMBER}`)))[0]
 }
 
 /** Borra la publicación y sus archivos en Drive. */
 export async function deletePost(post) {
-  await driveCall({ action: 'delete', member_id: post.member_id, ids: [post.drive_id, post.thumb_id] }).catch((e) => console.warn('[drive]', e))
+  const ids = [post.drive_id, post.thumb_id].filter(Boolean)
+  const r2Ids = ids.filter(isR2), driveIds = ids.filter((x) => !isR2(x))
+  if (r2Ids.length) await driveCall({ action: 'delete', member_id: post.member_id, ids: r2Ids }, 'r2-upload').catch((e) => console.warn('[r2]', e))
+  if (driveIds.length) await driveCall({ action: 'delete', member_id: post.member_id, ids: driveIds }).catch((e) => console.warn('[drive]', e))
   await q(supabase.from('posts').delete().eq('id', post.id))
 }
 
