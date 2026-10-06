@@ -11,6 +11,7 @@ import { Shell, PageTitle, Stat, Loading, Empty, Modal, Input, Select, Field, Av
 import { tip } from '../../components/Analytics'
 import MemberForm from './MemberForm'
 import Promotions from './Promotions'
+import { ProofPicker, ProofLink, PendingProofs } from '../../components/Payments'
 
 const NAV = [
   { id: 'dash', label: 'Dashboard', icon: LayoutDashboard, short: 'Inicio' },
@@ -45,9 +46,9 @@ export default function AdminApp() {
     <Shell sub="ADMINISTRACIÓN" nav={NAV} value={tab} onChange={setTab} user={{ ...me, role: 'Administrador' }} onLogout={() => { clearSession('admin'); setMe(null) }}>
       {!data ? <Loading /> : (
         <>
-          {tab === 'dash' && <Dashboard data={data} reload={load} />}
+          {tab === 'dash' && <Dashboard data={data} reload={load} goTo={setTab} />}
           {tab === 'members' && <Members data={data} reload={load} />}
-          {tab === 'memberships' && <Memberships data={data} reload={load} />}
+          {tab === 'memberships' && <Memberships data={data} reload={load} me={me} />}
           {tab === 'attendance' && <Attendance />}
           {tab === 'promos' && <Promotions data={data} me={me} />}
           {tab === 'plans' && <Plans data={data} reload={load} />}
@@ -60,13 +61,15 @@ export default function AdminApp() {
 }
 
 // ---------------- Dashboard ----------------
-function Dashboard({ data, reload }) {
+function Dashboard({ data, reload, goTo }) {
+  const [pending, setPending] = useState(0)
   const [ms, setMs] = useState([])
   const [att, setAtt] = useState([])
   const [renew, setRenew] = useState(null)
   useEffect(() => {
     q(supabase.from('memberships').select('*').gte('created_at', addDays(today(), -180))).then(setMs)
     q(supabase.from('attendance').select('created_at, method').gte('created_at', addDays(today(), -14))).then(setAtt)
+    supabase.from('payment_proofs').select('id', { count: 'exact', head: true }).eq('status', 'pendiente').then(({ count }) => setPending(count || 0))
   }, [])
   const active = data.members.filter((m) => m.status === 'activa' || m.status === 'por_vencer')
   const soon = data.members.filter((m) => m.status === 'por_vencer')
@@ -95,6 +98,12 @@ function Dashboard({ data, reload }) {
         <Stat label="Vencidos" value={expired.length} icon={AlertTriangle} />
         <Stat label="Ingresos del mes" value={money(income)} icon={DollarSign} sub={`${todayAtt} asistencias hoy`} />
       </div>
+      {pending > 0 && (
+        <div className="card hl mt row between wrap">
+          <b>🧾 {pending} comprobante{pending > 1 ? 's' : ''} de transferencia por revisar</b>
+          <button className="btn primary sm" onClick={() => goTo('memberships')}>Revisar</button>
+        </div>
+      )}
       <div className="grid g2 mt">
         <div className="card"><h3>Ingresos por mes</h3>
           <ResponsiveContainer width="100%" height={230}><BarChart data={incomeChart}><CartesianGrid stroke="#222" vertical={false} /><XAxis dataKey="mes" stroke="#666" fontSize={11} /><YAxis stroke="#666" fontSize={11} /><Tooltip {...tip} /><Bar dataKey="total" fill="#FFD60A" radius={[6, 6, 0, 0]} /></BarChart></ResponsiveContainer>
@@ -127,10 +136,13 @@ export function RenewModal({ m, plans, onClose, onSaved }) {
   const [f, setF] = useState({ plan_id: plans.find((p) => p.days === 30)?.id || plans[0]?.id, start_date: base, payment_method: 'efectivo', price: '' })
   const plan = plans.find((p) => p.id === f.plan_id)
   const save = async () => {
+    if (f.payment_method === 'transferencia' && !f.proof_path && !window.confirm('El pago es por transferencia y no adjuntaste el comprobante. ¿Renovar de todas formas?')) return
     try {
       await q(supabase.from('memberships').insert({
         member_id: m.member_id, plan_id: plan.id, plan_name: plan.name, start_date: f.start_date, end_date: addDays(f.start_date, plan.days),
-        price: f.price === '' ? plan.price : Number(f.price), payment_method: f.payment_method
+        price: f.price === '' ? plan.price : Number(f.price), payment_method: f.payment_method,
+        proof_path: f.payment_method === 'transferencia' ? f.proof_path || null : null,
+        payment_ref: f.payment_method === 'transferencia' ? f.payment_ref || null : null
       }))
       toast(`Membresía renovada hasta ${addDays(f.start_date, plan.days)}`, 'success'); onSaved()
     } catch (e) { toast(e.message, 'error') }
@@ -141,8 +153,14 @@ export function RenewModal({ m, plans, onClose, onSaved }) {
         <Select label="Plan" value={f.plan_id} onChange={(e) => setF({ ...f, plan_id: e.target.value })} options={plans.filter((p) => p.active).map((p) => ({ value: p.id, label: `${p.name} (${p.days} días) · ${money(p.price)}` }))} />
         <Input label="Desde" type="date" value={f.start_date} onChange={(e) => setF({ ...f, start_date: e.target.value })} />
         <Select label="Método de pago" value={f.payment_method} onChange={(e) => setF({ ...f, payment_method: e.target.value })} options={['efectivo', 'tarjeta', 'transferencia', 'otro']} />
-        <Input label={`Valor (por defecto ${money(plan?.price)})`} type="number" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} />
+        <Input label={`Valor en COP (por defecto ${money(plan?.price)})`} type="number" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} />
       </div>
+      {f.payment_method === 'transferencia' && (
+        <div className="col mt">
+          <Input label="Referencia de la transferencia" value={f.payment_ref} onChange={(e) => setF({ ...f, payment_ref: e.target.value })} />
+          <ProofPicker value={f.proof_path} onChange={(proof_path) => setF((x) => ({ ...x, proof_path }))} memberId={m.member_id} />
+        </div>
+      )}
       {plan && <p className="muted">Nuevo vencimiento: <b className="y">{fmtDate(addDays(f.start_date, plan.days))}</b>. Si la membresía sigue activa, se suma a partir de su vencimiento actual.</p>}
     </Modal>
   )
@@ -198,7 +216,7 @@ function Members({ data, reload }) {
 }
 
 // ---------------- Membresías ----------------
-function Memberships({ data, reload }) {
+function Memberships({ data, reload, me }) {
   const [rows, setRows] = useState(null)
   const [renew, setRenew] = useState(null)
   const load = () => q(supabase.from('memberships').select('*, members(full_name, cedula, photo)').order('created_at', { ascending: false }).limit(300)).then(setRows)
@@ -207,6 +225,10 @@ function Memberships({ data, reload }) {
   return (
     <>
       <PageTitle a="MEMBRESÍAS" b="Y RENOVACIONES" />
+      <div className="card hl mb">
+        <h3>Comprobantes de transferencia por revisar</h3>
+        <PendingProofs staffId={me?.id} onChanged={() => { load(); reload() }} />
+      </div>
       <div className="grid g3 mb">
         {['activa', 'por_vencer', 'vencida'].map((s) => {
           const l = data.members.filter((m) => m.status === s)
@@ -223,10 +245,10 @@ function Memberships({ data, reload }) {
       </div>
       {!rows ? <Loading /> : (
         <div className="table-wrap"><table className="t">
-          <thead><tr><th>Cliente</th><th>Plan</th><th>Inicio</th><th>Vence</th><th>Valor</th><th>Pago</th><th>Registrada</th><th /></tr></thead>
+          <thead><tr><th>Cliente</th><th>Plan</th><th>Inicio</th><th>Vence</th><th>Valor</th><th>Pago</th><th>Comprobante</th><th>Registrada</th><th /></tr></thead>
           <tbody>{rows.map((r) => (
             <tr key={r.id}><td>{r.members?.full_name}</td><td>{r.plan_name}</td><td>{fmtDate(r.start_date)}</td><td>{fmtDate(r.end_date)}</td><td>{money(r.price)}</td>
-              <td>{r.payment_method}</td><td className="small muted">{fmtDateTime(r.created_at)}</td>
+              <td>{r.payment_method}{r.payment_ref ? <div className="tiny muted">{r.payment_ref}</div> : null}</td><td><ProofLink path={r.proof_path} /></td><td className="small muted">{fmtDateTime(r.created_at)}</td>
               <td><button className="icon-btn" onClick={() => del(r.id)}><Trash2 size={15} /></button></td></tr>
           ))}</tbody>
         </table></div>
@@ -287,7 +309,7 @@ function Plans({ data, reload }) {
         <div className="grid g3">
           <Input label="Nombre" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
           <Input label="Días" type="number" value={f.days} onChange={(e) => setF({ ...f, days: e.target.value })} />
-          <Input label="Precio" type="number" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} />
+          <Input label="Precio (COP)" type="number" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} />
           <Select label="Estado" value={f.active === false ? 'no' : 'si'} onChange={(e) => setF({ ...f, active: e.target.value === 'si' })} options={[{ value: 'si', label: 'Activo' }, { value: 'no', label: 'Inactivo' }]} />
         </div>
       </Modal>}

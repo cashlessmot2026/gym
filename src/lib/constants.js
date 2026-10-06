@@ -38,4 +38,6 @@ export const fmtDateTime = (d) => d ? new Date(d).toLocaleString('es', { day: '2
 export const addDays = (date, n) => { const d = new Date(date + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10) }
 export const daysBetween = (a, b) => Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 86400000)
 export const calcAge = (birth) => birth ? Math.floor((Date.now() - new Date(birth)) / 31557600000) : null
-export const money = (n) => '$' + Number(n || 0).toLocaleString('es', { maximumFractionDigits: 2 })
+// Pesos colombianos: $ 120.000
+const COP = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 })
+export const money = (n) => COP.format(Number(n || 0))

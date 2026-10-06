@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { IdCard, QrCode, Nfc, ScanFace, CheckCircle2, XCircle, Delete, Power, Usb, Maximize, Minimize, Clock } from 'lucide-react'
 import { supabase, q } from '../../lib/supabase'
 import { startNfcScan, nfcSupported } from '../../lib/nfc'
 import { loadFace, detectFace, bestMatch, drawBox, preloadFace } from '../../lib/face'
 import { Brand, Avatar, StatusBadge, Spinner, Empty } from '../../components/ui'
-import { QRScanner, useCamera } from '../../components/Media'
+import { QRScanner, useCamera, useFacing, CameraSwitch } from '../../components/Media'
 
 const MODES = [
   { id: 'cedula', label: 'Cédula', icon: IdCard },
@@ -41,6 +42,8 @@ export default function CheckApp() {
   const [now, setNow] = useState(new Date())
   const [full, setFull] = useState(false)
   const busy = useRef(false)
+  const nav = useNavigate()
+  const native = !!window.Capacitor?.isNativePlatform?.()
 
   const pick = (m) => { setMode(m); localStorage.setItem(MODE_KEY, m) }
   const loadRecent = () => q(supabase.from('attendance').select('*, members(full_name, photo)').order('created_at', { ascending: false }).limit(10)).then(setRecent).catch(() => {})
@@ -116,6 +119,7 @@ export default function CheckApp() {
             <div className="display">{now.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })}</div>
             <div className="tiny muted">{now.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
           </div>
+          {native && <button className="btn sm ghost" onClick={() => nav('/')}>Salir</button>}
           {canFull && <button className="icon-btn kiosk-fs" onClick={toggleFull} title="Pantalla completa">{full ? <Minimize size={20} /> : <Maximize size={20} />}</button>}
         </header>
 
@@ -246,7 +250,8 @@ function NfcReader({ onRead }) {
  * registrado. Exige 3 coincidencias consecutivas del mismo cliente para confirmar.
  */
 function FaceCheck({ onMatch, paused }) {
-  const { ref, err, ready } = useCamera(true)
+  const [facing, toggleFacing] = useFacing('check', 'user')
+  const { ref, err, ready } = useCamera(true, facing)
   const canvasRef = useRef(null)
   const [members, setMembers] = useState(null)
   const [hint, setHint] = useState('Cargando reconocimiento facial…')
@@ -288,14 +293,15 @@ function FaceCheck({ onMatch, paused }) {
     setHint('Mira a la cámara')
     loop()
     return () => { stop = true }
-  }, [ready, modelOk, members])
+  }, [ready, modelOk, members, facing])
 
   return (
     <div className="card reader-card wide">
-      <div className="cam">
+      <div className={`cam ${facing === 'environment' ? 'rear' : ''}`}>
         <video ref={ref} playsInline muted autoPlay />
         <canvas ref={canvasRef} />
         <div className="oval" />
+        <div className="cam-tools"><CameraSwitch facing={facing} onToggle={toggleFacing} /></div>
         <div className="hint">{err || (!modelOk ? <><Spinner size={14} /> Cargando IA…</> : hint)}</div>
       </div>
       <p className="tiny muted center mt">{members ? `${members.length} rostros registrados` : '…'} · 3 confirmaciones consecutivas</p>

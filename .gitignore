@@ -1,8 +1,6 @@
 node_modules
 dist
 dev-dist
-android
-ios
 .env.local
 *.log
 .env.vapid.json

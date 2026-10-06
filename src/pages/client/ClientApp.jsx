@@ -12,6 +12,7 @@ import NutritionAI from '../../components/NutritionAI'
 import ExerciseBrowser from '../../components/ExerciseBrowser'
 import { QRImage, WatchPanel } from '../../components/Media'
 import { usePushInbox, PushBanner, NotificationBell, PushOptIn } from '../../components/Notifications'
+import { ClientTransfer, ProofLink } from '../../components/Payments'
 import Onboarding from './Onboarding'
 import Training from './Training'
 
@@ -124,10 +125,12 @@ function Profile({ me, status, types, onSave, bell }) {
       <div className="card mt">
         <h3>Historial de membresías</h3>
         <div className="table-wrap"><table className="t">
-          <thead><tr><th>Plan</th><th>Inicio</th><th>Vence</th><th>Valor</th></tr></thead>
-          <tbody>{hist.map((h) => <tr key={h.id}><td>{h.plan_name}</td><td>{fmtDate(h.start_date)}</td><td>{fmtDate(h.end_date)}</td><td>{money(h.price)}</td></tr>)}</tbody>
+          <thead><tr><th>Plan</th><th>Inicio</th><th>Vence</th><th>Valor</th><th>Pago</th><th>Comprobante</th></tr></thead>
+          <tbody>{hist.map((h) => <tr key={h.id}><td>{h.plan_name}</td><td>{fmtDate(h.start_date)}</td><td>{fmtDate(h.end_date)}</td><td>{money(h.price)}</td>
+            <td className="small">{h.payment_method}</td><td><ProofLink path={h.proof_path} /></td></tr>)}</tbody>
         </table></div>
       </div>
+      <div className="mt"><ClientTransfer member={me} /></div>
       {edit && <Modal title="Objetivo y modalidades" onClose={() => setEdit(false)} wide>
         <Onboarding editing member={me} types={types} onSave={async (p) => { await onSave(p); setEdit(false) }} />
       </Modal>}

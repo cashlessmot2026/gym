@@ -7,6 +7,7 @@ import { addDays, today, money } from '../../lib/constants'
 import { Modal, Input, Select, Field, Spinner, Avatar, useToast } from '../../components/ui'
 import { FaceEnroll, QRImage } from '../../components/Media'
 import { preloadFace } from '../../lib/face'
+import { ProofPicker, ProofLink, PendingProofs } from '../../components/Payments'
 
 const genCode = () => 'IY-' + Array.from(crypto.getRandomValues(new Uint8Array(5))).map((b) => b.toString(16).padStart(2, '0')).join('').toUpperCase()
 
@@ -42,6 +43,7 @@ export default function MemberForm({ member, plans, coaches, onClose, onSaved })
   const save = async () => {
     if (!f.full_name || !f.cedula) return toast('Nombre y cédula son obligatorios', 'error')
     if (isNew && pass.length < 4) return toast('Asigna una contraseña de al menos 4 caracteres', 'error')
+    if (isNew && plan.payment_method === 'transferencia' && !plan.proof_path && !window.confirm('El pago es por transferencia y no adjuntaste el comprobante. ¿Guardar de todas formas?')) return
     setBusy(true)
     try {
       const row = {
@@ -58,7 +60,9 @@ export default function MemberForm({ member, plans, coaches, onClose, onSaved })
       if (isNew && selPlan) {
         await q(supabase.from('memberships').insert({
           member_id: id, plan_id: selPlan.id, plan_name: selPlan.name, start_date: plan.start_date,
-          end_date: addDays(plan.start_date, selPlan.days), price: selPlan.price, payment_method: plan.payment_method
+          end_date: addDays(plan.start_date, selPlan.days), price: selPlan.price, payment_method: plan.payment_method,
+          proof_path: plan.payment_method === 'transferencia' ? plan.proof_path || null : null,
+          payment_ref: plan.payment_method === 'transferencia' ? plan.payment_ref || null : null
         }))
       }
       toast(isNew ? 'Cliente inscrito correctamente' : 'Cliente actualizado', 'success')
@@ -95,8 +99,15 @@ export default function MemberForm({ member, plans, coaches, onClose, onSaved })
                 <Select label="Pago" value={plan.payment_method} onChange={(e) => setPlan({ ...plan, payment_method: e.target.value })} options={['efectivo', 'tarjeta', 'transferencia', 'otro']} />
               </div>
               {selPlan && <p className="small muted">Vence el <b className="y">{addDays(plan.start_date, selPlan.days)}</b> ({selPlan.days} días)</p>}
+              {plan.payment_method === 'transferencia' && (
+                <div className="col">
+                  <Input label="Referencia de la transferencia" value={plan.payment_ref} onChange={(e) => setPlan({ ...plan, payment_ref: e.target.value })} />
+                  <ProofPicker value={plan.proof_path} onChange={(proof_path) => setPlan((x) => ({ ...x, proof_path }))} memberId={member?.id} />
+                </div>
+              )}
             </div>
           )}
+          {!isNew && <MemberPayments memberId={member.id} />}
         </div>
 
         <div className="col">
@@ -125,5 +136,40 @@ export default function MemberForm({ member, plans, coaches, onClose, onSaved })
         </Modal>
       )}
     </Modal>
+  )
+}
+
+/** Historial de pagos del cliente con sus comprobantes; permite adjuntar uno a una membresía existente. */
+function MemberPayments({ memberId }) {
+  const toast = useToast()
+  const [rows, setRows] = useState(null)
+  const [attach, setAttach] = useState(null)
+  const load = () => q(supabase.from('memberships').select('*').eq('member_id', memberId).order('end_date', { ascending: false })).then(setRows)
+  useEffect(() => { load() }, [memberId])
+  const saveProof = async (path) => {
+    if (!path) return
+    await q(supabase.from('memberships').update({ proof_path: path, payment_method: 'transferencia' }).eq('id', attach))
+    toast('Comprobante guardado', 'success'); setAttach(null); load()
+  }
+  return (
+    <div className="card" style={{ background: 'var(--bg2)' }}>
+      <h3><CreditCard size={16} className="y" /> Pagos y comprobantes</h3>
+      {!rows ? <Spinner /> : (
+        <div className="table-wrap"><table className="t">
+          <thead><tr><th>Plan</th><th>Vence</th><th>Valor</th><th>Pago</th><th>Comprobante</th></tr></thead>
+          <tbody>{rows.map((r) => (
+            <tr key={r.id}><td>{r.plan_name}</td><td>{r.end_date}</td><td>{money(r.price)}</td><td className="small">{r.payment_method}{r.payment_ref ? ` · ${r.payment_ref}` : ''}</td>
+              <td>{r.proof_path ? <ProofLink path={r.proof_path} /> : <button type="button" className="btn sm" onClick={() => setAttach(r.id)}>Adjuntar</button>}</td></tr>
+          ))}</tbody>
+        </table></div>
+      )}
+      <div className="small muted mt mb">Comprobantes enviados por el cliente desde su app:</div>
+      <PendingProofs memberId={memberId} onChanged={load} />
+      {attach && (
+        <Modal title="Adjuntar comprobante" onClose={() => setAttach(null)}>
+          <ProofPicker value={null} onChange={saveProof} memberId={memberId} />
+        </Modal>
+      )}
+    </div>
   )
 }

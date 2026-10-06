@@ -44,6 +44,7 @@ export async function enablePush(memberId) {
   if (!kind) throw new Error('Este navegador no soporta notificaciones push. En iPhone, instala la app en la pantalla de inicio (iOS 16.4+).')
 
   if (kind === 'native') {
+    if (import.meta.env.VITE_FCM_ENABLED !== 'true') throw new Error('Las notificaciones de la app Android se activan cuando el gimnasio configure Firebase. Mientras tanto verás los avisos dentro de la app.')
     const { PushNotifications } = await import('@capacitor/push-notifications')
     const perm = await PushNotifications.requestPermissions()
     if (perm.receive !== 'granted') { localStorage.setItem('iy_push_native', 'denied'); throw new Error('Permiso de notificaciones denegado') }

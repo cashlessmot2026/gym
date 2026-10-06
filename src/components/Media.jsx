@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
-import { CheckCircle2, Download, ScanFace, Watch, Bluetooth, BluetoothOff, HeartPulse, Battery } from 'lucide-react'
+import { CheckCircle2, Download, ScanFace, SwitchCamera, Watch, Bluetooth, BluetoothOff, HeartPulse, Battery } from 'lucide-react'
 import { detectFace, faceQuality, loadFace, snapshot, drawBox } from '../lib/face'
 import { onWatch, pairWatch, unpairWatch, watchState, bleSupported, savedWatch, reconnectWatch } from '../lib/watch'
 import { Spinner, useToast } from './ui'
@@ -32,6 +32,30 @@ export function useCamera(active = true, facingMode = 'user', width = 640, heigh
   return { ref, err, ready }
 }
 
+/** Preferencia de cámara (frontal 'user' / trasera 'environment'), recordada por pantalla. */
+export function useFacing(key, initial = 'user') {
+  const k = `iy_cam_${key}`
+  const [facing, setFacing] = useState(() => localStorage.getItem(k) || initial)
+  const toggle = () => setFacing((f) => { const n = f === 'user' ? 'environment' : 'user'; localStorage.setItem(k, n); return n })
+  return [facing, toggle]
+}
+
+/** Botón para alternar cámara frontal / trasera (se muestra si hay más de una cámara o es un móvil/tablet). */
+export function CameraSwitch({ facing, onToggle, disabled }) {
+  const [multi, setMulti] = useState(() => window.matchMedia?.('(pointer: coarse)').matches)
+  useEffect(() => {
+    navigator.mediaDevices?.enumerateDevices?.().then((d) => {
+      if (d.filter((x) => x.kind === 'videoinput').length > 1) setMulti(true)
+    }).catch(() => {})
+  }, [])
+  if (!multi) return null
+  return (
+    <button type="button" className="btn sm cam-switch" onClick={onToggle} disabled={disabled} title="Cambiar cámara">
+      <SwitchCamera size={16} /> {facing === 'user' ? 'Frontal' : 'Trasera'}
+    </button>
+  )
+}
+
 /**
  * Registro facial para el formulario de inscripción.
  * Detección continua con recuadro en vivo y captura AUTOMÁTICA de 5 muestras
@@ -39,7 +63,8 @@ export function useCamera(active = true, facingMode = 'user', width = 640, heigh
  * Si en 10 s no lo logra, ofrece una captura manual con requisitos más flexibles.
  */
 export function FaceEnroll({ onDone, samples = 5 }) {
-  const { ref, err, ready } = useCamera(true)
+  const [facing, toggleFacing] = useFacing('enroll', 'user')
+  const { ref, err, ready } = useCamera(true, facing)
   const canvasRef = useRef(null)
   const [models, setModels] = useState(false)
   const [modelErr, setModelErr] = useState('')
@@ -93,7 +118,7 @@ export function FaceEnroll({ onDone, samples = 5 }) {
     setHint('Coloca tu rostro dentro del óvalo')
     loop()
     return () => { stop = true }
-  }, [ready, models, round])
+  }, [ready, models, round, facing])
 
   // Captura manual: acepta cualquier rostro detectado (útil con poca luz o cámaras de baja calidad)
   const captureManual = async () => {
@@ -118,12 +143,13 @@ export function FaceEnroll({ onDone, samples = 5 }) {
   const loadingStage = modelErr || err || (!ready ? 'Abriendo cámara…' : !models ? 'Cargando reconocimiento facial…' : null)
   return (
     <div className="col">
-      <div className={`cam face-cam lvl-${done ? 2 : level}`}>
+      <div className={`cam face-cam lvl-${done ? 2 : level} ${facing === 'environment' ? 'rear' : ''}`}>
         <video ref={ref} playsInline muted autoPlay />
         <canvas ref={canvasRef} />
         <div className="oval" />
         {loadingStage && <div className="cam-loading">{!(modelErr || err) && <Spinner size={28} />}<span>{loadingStage}</span></div>}
         {!loadingStage && <div className="hint">{hint}</div>}
+        <div className="cam-tools"><CameraSwitch facing={facing} onToggle={toggleFacing} /></div>
       </div>
       <div className="row" style={{ gap: 6 }}>
         {Array.from({ length: samples }).map((_, i) => <div key={i} className="grow" style={{ height: 8, borderRadius: 6, background: i < count ? 'var(--ok)' : 'var(--card2)', transition: '.2s' }} />)}

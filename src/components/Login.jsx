@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Copy, KeyRound, LogIn, Check, Mail } from 'lucide-react'
 import { login, recoverPassword } from '../lib/auth'
 import { Brand, Modal, Input, Spinner, useToast } from './ui'
@@ -18,6 +19,15 @@ export default function Login({ scope, onLogin }) {
   const [err, setErr] = useState('')
   const [forgot, setForgot] = useState(false)
   const [t1, t2, desc, userLabel] = TITLES[scope]
+  const nav = useNavigate()
+  const native = !!window.Capacitor?.isNativePlatform?.()
+  // En la app nativa no hay barra de direcciones: 5 toques al logo abren el panel admin (oculto)
+  const taps = useRef({ n: 0, t: 0 })
+  const tapLogo = () => {
+    const now = Date.now()
+    taps.current = { n: now - taps.current.t < 600 ? taps.current.n + 1 : 1, t: now }
+    if (taps.current.n >= 5) { taps.current.n = 0; nav('/admin') }
+  }
 
   const submit = async (e) => {
     e.preventDefault()
@@ -28,7 +38,7 @@ export default function Login({ scope, onLogin }) {
   return (
     <div className="login-wrap">
       <div className="login-hero">
-        <Brand sub={scope === 'member' ? 'GYM APP' : scope.toUpperCase()} />
+        <div onClick={tapLogo} style={{ cursor: 'default', userSelect: 'none' }}><Brand sub={scope === 'member' ? 'GYM APP' : scope.toUpperCase()} /></div>
         <div style={{ position: 'relative', zIndex: 1 }}>
           <h1>{t1}<br /><span>{t2}</span></h1>
           <p className="muted" style={{ maxWidth: 420, fontSize: '1.05rem' }}>{desc}</p>
@@ -44,6 +54,13 @@ export default function Login({ scope, onLogin }) {
           <button className="btn primary lg block" disabled={busy}>{busy ? <Spinner /> : <LogIn size={18} />} Entrar</button>
           <button type="button" className="btn ghost block" onClick={() => setForgot(true)}><KeyRound size={16} /> ¿Olvidaste tu contraseña?</button>
           {scope === 'member' && <p className="tiny muted center">Tu usuario lo crea el gimnasio al inscribirte.</p>}
+          {native && (
+            <div className="row center" style={{ justifyContent: 'center', gap: 6, marginTop: 8 }}>
+              {scope !== 'member' && <button type="button" className="btn sm ghost" onClick={() => nav('/')}>App de clientes</button>}
+              {scope !== 'coach' && <button type="button" className="btn sm ghost" onClick={() => nav('/coach')}>Acceso coach</button>}
+              {scope !== 'check' && <button type="button" className="btn sm ghost" onClick={() => nav('/check')}>Check-in</button>}
+            </div>
+          )}
         </form>
       </div>
       {forgot && <Recover onClose={() => setForgot(false)} toast={toast} />}
