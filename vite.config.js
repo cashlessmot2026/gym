@@ -29,6 +29,7 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 12 * 1024 * 1024,
         globPatterns: ['**/*.{js,css,html,svg,png,json,bin,wasm,woff2}'],
         navigateFallback: 'index.html',
+        navigateFallbackDenylist: [/privacypolicy.html$/, /acerca.html$/, /google[0-9a-f]+.html$/],
         runtimeCaching: [
           {
             urlPattern: ({ url }) => url.hostname.endsWith('supabase.co'),
