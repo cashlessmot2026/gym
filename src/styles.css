@@ -342,3 +342,145 @@ table.t { width: 100%; border-collapse: collapse; font-size: .88rem; }
 .class-time .display { font-size: 1.6rem; line-height: 1; }
 .class-hero { position: relative; overflow: hidden; }
 @media (max-width: 560px) { .today-row { gap: 8px; } .today-time { font-size: 1.4rem; min-width: 56px; } }
+
+/* =====================================================================
+   ADAPTACIÓN MÓVIL (APK Android, PWA y navegador · teléfonos y tablets)
+   ===================================================================== */
+
+/* Zonas seguras: barra de estado / muesca / barra de gestos.
+   En el APK Capacitor inyecta --safe-area-inset-*; en navegadores se usa env(). */
+:root {
+  --sat: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --sab: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  --sal: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+  --sar: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+  --bottom-nav-h: 64px;
+}
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body { overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }
+button, a, .chip, .day, .ex, .sel-card, .card-click { touch-action: manipulation; }
+
+/* Ningún contenido puede ensanchar la página: las tablas se desplazan dentro de su caja */
+.shell { grid-template-columns: 250px minmax(0, 1fr); }
+.main, .grid > *, .col > *, .row > .grow, .card, .modal, .split > * { min-width: 0; }
+.table-wrap { max-width: 100%; -webkit-overflow-scrolling: touch; }
+img, video, canvas { max-width: 100%; }
+.split { display: grid; gap: 18px; }
+.split-form { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); }
+.split-promo { grid-template-columns: minmax(0, 1.5fr) minmax(280px, 1fr); }
+
+/* Barra superior móvil (oculta en escritorio) */
+.mobile-bar { display: none; }
+.brand.mini { padding: 0; gap: 8px; }
+.brand.mini .brand-logo { width: 34px; height: 34px; border-radius: 10px; }
+.brand.mini .brand-name { font-size: 1.35rem; }
+.mobile-user { background: none; border: 0; padding: 0; cursor: pointer; border-radius: 50%; }
+
+/* Hoja inferior ("Más" y cuenta) */
+.sheet-overlay { place-items: end center; padding: 0; }
+.sheet { width: min(560px, 100%); background: var(--card); border: 1px solid var(--line); border-bottom: 0; border-radius: 22px 22px 0 0;
+  padding: 10px 18px calc(18px + var(--sab)); animation: sheetUp .22s cubic-bezier(.2, .9, .3, 1); max-height: 85dvh; overflow-y: auto; }
+.sheet-grip { width: 44px; height: 5px; border-radius: 5px; background: #3a3a3a; margin: 0 auto 14px; }
+.sheet-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.sheet-item { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 6px; border-radius: 16px; background: var(--card2);
+  border: 1px solid var(--line); color: var(--tx); font-weight: 700; font-size: .78rem; cursor: pointer; text-align: center; }
+.sheet-item.on { background: var(--y); color: #000; border-color: var(--y); }
+@keyframes sheetUp { from { transform: translateY(40px); opacity: 0 } }
+
+/* ---------------- Tablet (≤ 1024 px) ---------------- */
+@media (max-width: 1024px) {
+  .split-promo { grid-template-columns: minmax(0, 1fr); }
+  .main { padding: 22px 20px 90px; }
+}
+
+/* ---------------- Móvil y tablet vertical (≤ 860 px) ---------------- */
+@media (max-width: 860px) {
+  .shell { grid-template-columns: minmax(0, 1fr); }
+  .split-form { grid-template-columns: minmax(0, 1fr); }
+
+  .mobile-bar { display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 45;
+    padding: calc(8px + var(--sat)) calc(14px + var(--sar)) 8px calc(14px + var(--sal));
+    background: rgba(7, 7, 7, .92); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid var(--line); }
+  .main { padding: 14px calc(14px + var(--sar)) calc(var(--bottom-nav-h) + 22px + var(--sab)) calc(14px + var(--sal)); }
+
+  .bottom-nav { padding: 6px calc(4px + var(--sar)) calc(6px + var(--sab)) calc(4px + var(--sal)); justify-content: space-around; overflow: visible; }
+  .bottom-nav button { flex: 1 1 0; min-width: 0; padding: 6px 2px; gap: 3px; font-size: .66rem; border-radius: 12px; }
+  .bottom-nav button span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bottom-nav button.on { background: var(--y-soft); }
+
+  .topbar { margin-bottom: 14px; gap: 10px; }
+  .page-title { font-size: 1.75rem; }
+  .topbar > .row.wrap { gap: 8px; }
+
+  /* Ventanas como hoja inferior a pantalla casi completa */
+  .overlay:not(.sheet-overlay) { padding: 0; place-items: end center; }
+  .modal, .modal.wide { width: 100%; max-height: calc(100dvh - var(--sat) - 8px); border-radius: 20px 20px 0 0; border-bottom: 0;
+    padding: 16px calc(16px + var(--sar)) calc(18px + var(--sab)) calc(16px + var(--sal)); animation: sheetUp .22s cubic-bezier(.2, .9, .3, 1); }
+  .modal-h { position: sticky; top: -16px; z-index: 3; background: var(--card); margin: -16px -16px 12px; padding: 14px 16px 10px; border-bottom: 1px solid var(--line); }
+  .modal-h h2 { font-size: 1.45rem; }
+
+  .toasts { top: calc(10px + var(--sat)); left: 12px; right: 12px; }
+  .toast { min-width: 0; max-width: none; }
+  .push-banner { top: calc(10px + var(--sat)); }
+
+  /* Tablas más compactas (se desplazan horizontalmente dentro de su caja) */
+  table.t { font-size: .82rem; }
+  .t th, .t td { padding: 9px 10px; }
+
+  .tabs { margin-left: -2px; margin-right: -2px; }
+}
+
+/* ---------------- Teléfonos (≤ 560 px) ---------------- */
+@media (max-width: 560px) {
+  /* Estadísticas en 2 columnas compactas */
+  .grid:has(> .stat) { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .stat { padding: 12px; border-radius: 14px; }
+  .stat .v { font-size: 1.65rem; }
+  .stat .l { font-size: .66rem; padding-right: 22px; }
+  .stat .ic { width: 18px; height: 18px; right: 10px; top: 10px; }
+  .stat .small { font-size: .72rem; }
+
+  .card { padding: 14px; border-radius: 14px; }
+  .page-title { font-size: 1.55rem; }
+  .btn { padding: 10px 14px; }
+  .btn.lg { padding: 13px 18px; font-size: 1rem; }
+  .group-h { font-size: 1.2rem; margin: 14px 0 8px; }
+  .grid.auto { grid-template-columns: minmax(0, 1fr); }
+  .days { gap: 5px; }
+  .day { padding: 8px 2px; border-radius: 12px; }
+  .day .dc { font-size: 1.35rem; }
+  .ex { padding: 10px; gap: 10px; }
+  .ex-img { width: 48px; height: 48px; }
+  .timer-ring { width: min(250px, 66vw); }
+  .modal .grid.g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .chip { padding: 7px 12px; font-size: .8rem; }
+  .week-grid { grid-template-columns: repeat(7, minmax(140px, 1fr)); }
+  .class-card { padding: 10px 12px; gap: 10px; }
+  .login-hero { padding: calc(22px + var(--sat)) 20px 22px; min-height: 0; gap: 18px; }
+  .login-hero h1 { font-size: 2.8rem; }
+  .login-hero .stripes { width: 220px; height: 220px; }
+  .login-form { padding: 22px 16px calc(28px + var(--sab)); }
+}
+
+/* Evita el zoom automático de iPhone al enfocar campos (requiere ≥ 16 px) */
+@media (max-width: 860px) and (pointer: coarse) {
+  .input, select.input, textarea.input, input, select, textarea { font-size: 16px; }
+}
+
+/* Teléfono en horizontal: aprovechar la altura disponible */
+@media (max-height: 500px) and (orientation: landscape) and (max-width: 960px) {
+  .mobile-bar { position: static; }
+  .bottom-nav button { flex-direction: row; gap: 6px; font-size: .7rem; padding: 4px; }
+  :root { --bottom-nav-h: 46px; }
+  .modal, .modal.wide { max-height: 100dvh; }
+}
+
+/* Kiosco: zonas seguras del APK */
+.kiosk { padding: var(--sat) var(--sar) var(--sab) var(--sal); }
+/* Las filas del layout no se estiran cuando la página tiene poco contenido */
+.shell { align-content: start; }
+@media (max-width: 860px) { .shell { grid-template-rows: auto 1fr; min-height: 100dvh; } }
+/* En teléfonos, los campos "anchos" ocupan toda la fila (evita columnas fantasma desiguales) */
+@media (max-width: 560px) {
+  .grid > .field[style*="span"] { grid-column: 1 / -1 !important; }
+}

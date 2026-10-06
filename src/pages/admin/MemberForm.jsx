@@ -85,7 +85,7 @@ export default function MemberForm({ member, plans, coaches, onClose, onSaved })
   return (
     <Modal title={isNew ? 'Inscripción de cliente' : 'Editar cliente'} onClose={onClose} wide
       footer={<><button className="btn ghost" onClick={onClose}>Cancelar</button><button className="btn primary" onClick={save} disabled={busy}>{busy ? <Spinner /> : <Save size={16} />} Guardar</button></>}>
-      <div className="grid" style={{ gridTemplateColumns: 'minmax(0,1.6fr) minmax(0,1fr)', gap: 18 }}>
+      <div className="grid split split-form">
         <div className="col">
           <div className="grid g2">
             <Input label="Nombre completo *" value={f.full_name} onChange={set('full_name')} />

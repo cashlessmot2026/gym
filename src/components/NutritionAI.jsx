@@ -58,7 +58,7 @@ export default function NutritionAI({ member }) {
   const pdfLast = () => nutritionPdf({ title: 'Recomendación nutricional', member, metrics: profile, markdown: lastAnswer.text })
 
   return (
-    <div className="grid" style={{ gridTemplateColumns: 'minmax(0,1fr)', gap: 14 }}>
+    <div className="grid" style={{ gridTemplateColumns: 'minmax(0, 1fr)', gap: 14, minWidth: 0 }}>
       <div className="card hl">
         <div className="row between wrap">
           <div className="row"><div className="brand-logo"><Bot size={22} /></div>

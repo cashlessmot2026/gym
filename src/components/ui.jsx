@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
-import { X, Dumbbell, LogOut, Loader2 } from 'lucide-react'
+import { X, Dumbbell, LogOut, Loader2, Menu } from 'lucide-react'
 
 // ---------- Toasts ----------
 const ToastCtx = createContext(() => {})
@@ -177,6 +177,12 @@ export function Brand({ sub }) {
 }
 
 export function Shell({ sub, nav, value, onChange, user, onLogout, children }) {
+  const [sheet, setSheet] = useState(false)
+  // Móvil: máximo 5 botones abajo; el resto va en "Más"
+  const MAX = 5
+  const primary = nav.length > MAX ? nav.slice(0, MAX - 1) : nav
+  const rest = nav.length > MAX ? nav.slice(MAX - 1) : []
+  const go = (id) => { onChange(id); setSheet(false); window.scrollTo({ top: 0 }) }
   return (
     <div className="shell">
       <aside className="side">
@@ -197,14 +203,51 @@ export function Shell({ sub, nav, value, onChange, user, onLogout, children }) {
           </div>
         )}
       </aside>
+
+      <header className="mobile-bar">
+        <div className="brand mini"><div className="brand-logo"><Dumbbell size={18} /></div><div className="brand-name">IRON<span>YELLOW</span></div></div>
+        {user && <button className="mobile-user" onClick={() => setSheet(true)} aria-label="Mi cuenta"><Avatar src={user.photo} name={user.full_name} /></button>}
+      </header>
+
       <main className="main">{children}</main>
+
       <nav className="bottom-nav">
-        {nav.map((n) => (
-          <button key={n.id} className={value === n.id ? 'on' : ''} onClick={() => onChange(n.id)}>
-            <n.icon size={21} />{n.short || n.label}
+        {primary.map((n) => (
+          <button key={n.id} className={value === n.id ? 'on' : ''} onClick={() => go(n.id)}>
+            <n.icon size={21} /><span>{n.short || n.label}</span>
           </button>
         ))}
+        {rest.length > 0 && (
+          <button className={rest.some((n) => n.id === value) ? 'on' : ''} onClick={() => setSheet(true)}>
+            <Menu size={21} /><span>Más</span>
+          </button>
+        )}
       </nav>
+
+      {sheet && (
+        <div className="overlay sheet-overlay" onMouseDown={(e) => e.target === e.currentTarget && setSheet(false)}>
+          <div className="sheet">
+            <div className="sheet-grip" />
+            {user && (
+              <div className="row mb">
+                <Avatar src={user.photo} name={user.full_name} />
+                <div className="grow"><div style={{ fontWeight: 800 }}>{user.full_name}</div><div className="tiny muted">{user.role || 'Cliente'} · {sub}</div></div>
+                <button className="icon-btn" onClick={() => setSheet(false)} aria-label="Cerrar"><X /></button>
+              </div>
+            )}
+            {rest.length > 0 && (
+              <div className="sheet-grid">
+                {rest.map((n) => (
+                  <button key={n.id} className={`sheet-item ${value === n.id ? 'on' : ''}`} onClick={() => go(n.id)}>
+                    <n.icon size={22} /><span>{n.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {onLogout && <button className="btn danger block mt" onClick={() => { setSheet(false); onLogout() }}><LogOut size={16} /> Cerrar sesión</button>}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

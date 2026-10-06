@@ -138,7 +138,7 @@ export default function Promotions({ data, me }) {
         <Stat label="Entregas (30 días)" value={sent30.reduce((s, n) => s + (n.sent_count || 0), 0)} icon={CheckCircle2} sub={`${sent30.reduce((s, n) => s + (n.failed_count || 0), 0)} fallidas`} />
       </div>
 
-      <div className="grid mt" style={{ gridTemplateColumns: 'minmax(0,1.5fr) minmax(280px,1fr)', gap: 16 }}>
+      <div className="grid mt split split-promo">
         <div className="card">
           <h3><Megaphone size={16} className="y" /> Nueva campaña</h3>
           <Field label="Plantillas rápidas">

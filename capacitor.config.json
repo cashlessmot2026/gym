@@ -25,6 +25,15 @@
     "LocalNotifications": {
       "iconColor": "#FFD60A",
       "sound": "alarma.wav"
+    },
+    "SystemBars": {
+      "insetsHandling": "css",
+      "initialViewportFitValueHint": "cover",
+      "style": "DARK"
     }
-  }
+  },
+  "android": {
+    "backgroundColor": "#070707"
+  },
+  "backgroundColor": "#070707"
 }
