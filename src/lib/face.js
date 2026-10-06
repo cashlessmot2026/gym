@@ -1,7 +1,7 @@
 // Reconocimiento facial con @vladmandic/face-api (TensorFlow.js).
-// Detector SSD MobileNet v1 + 68 landmarks + red de reconocimiento ResNet-34
-// (descriptor de 128 dimensiones, ~99.4% en LFW). Modelos servidos desde /models
-// para que funcione sin internet (PWA local / app nativa).
+// - Detección: TinyFaceDetector (190 KB, muy rápido en móviles y PC).
+// - Alineación: 68 landmarks.  - Identidad: red ResNet-34 → descriptor de 128 dimensiones.
+// Los modelos se sirven desde /models para que funcione sin internet (PWA local / app nativa).
 let fa = null
 let loading = null
 
@@ -11,48 +11,60 @@ export function loadFace() {
     loading = (async () => {
       const lib = await import('@vladmandic/face-api')
       try { await lib.tf.setBackend('webgl') } catch { /* usa el backend por defecto */ }
+      // Reutiliza los shaders aunque cambie el tamaño de la imagen (evita recompilaciones lentas)
+      try { lib.tf.env().set('WEBGL_USE_SHAPES_UNIFORMS', true) } catch { /* flag no disponible */ }
       await lib.tf.ready()
       const url = (import.meta.env.BASE_URL || '/') + 'models'
       await Promise.all([
-        lib.nets.ssdMobilenetv1.loadFromUri(url),
+        lib.nets.tinyFaceDetector.loadFromUri(url),
         lib.nets.faceLandmark68Net.loadFromUri(url),
         lib.nets.faceRecognitionNet.loadFromUri(url)
       ])
+      // Calentamiento: la 1ª inferencia compila los shaders de WebGL (lenta). Se hace aquí,
+      // en segundo plano, para que la cámara responda al instante cuando se abra.
+      try {
+        const c = document.createElement('canvas'); c.width = c.height = 160
+        const g = c.getContext('2d'); g.fillStyle = '#888'; g.fillRect(0, 0, 160, 160)
+        await lib.detectSingleFace(c, new lib.TinyFaceDetectorOptions({ inputSize: 160 })).withFaceLandmarks().withFaceDescriptor()
+      } catch { /* sin rostro: sólo calienta */ }
       fa = lib
       return lib
-    })()
+    })().catch((e) => { loading = null; throw e })
   }
   return loading
 }
 
-/** Detecta UNA cara con landmarks y descriptor. Devuelve null si no hay. */
-export async function detectFace(video, minConfidence = 0.6) {
+/** Precarga los modelos en segundo plano (llamar al abrir pantallas que usarán la cámara). */
+export const preloadFace = () => { loadFace().catch(() => {}) }
+
+const options = (lib, scoreThreshold = 0.5, inputSize = 320) => new lib.TinyFaceDetectorOptions({ inputSize, scoreThreshold })
+
+/** Detecta UNA cara con landmarks y descriptor. Devuelve undefined si no hay. */
+export async function detectFace(video, scoreThreshold = 0.5, inputSize = 320) {
   const lib = await loadFace()
-  return lib
-    .detectSingleFace(video, new lib.SsdMobilenetv1Options({ minConfidence, maxResults: 1 }))
-    .withFaceLandmarks()
-    .withFaceDescriptor()
+  return lib.detectSingleFace(video, options(lib, scoreThreshold, inputSize)).withFaceLandmarks().withFaceDescriptor()
 }
 
 /**
- * Evalúa la calidad de la captura: tamaño, confianza y orientación frontal
- * (comparando la nariz con el punto medio de los ojos para estimar el giro).
+ * Evalúa la captura: tamaño, confianza, orientación frontal (giro e inclinación)
+ * y nitidez/iluminación aproximadas. Umbrales pensados para cámaras de celular y webcam.
  */
 export function faceQuality(det, video) {
-  if (!det) return { ok: false, msg: 'No se detecta rostro' }
+  if (!det) return { ok: false, level: 0, msg: 'Buscando rostro…' }
   const { box, score } = det.detection
   const pts = det.landmarks.positions
   const leftEye = avg(pts.slice(36, 42)), rightEye = avg(pts.slice(42, 48)), nose = pts[30]
-  const eyeDist = Math.abs(rightEye.x - leftEye.x)
+  const eyeDist = Math.abs(rightEye.x - leftEye.x) || 1
   const yaw = (nose.x - (leftEye.x + rightEye.x) / 2) / eyeDist
   const roll = Math.atan2(rightEye.y - leftEye.y, rightEye.x - leftEye.x) * 57.3
   const vw = video.videoWidth || 640
-  if (score < 0.85) return { ok: false, msg: 'Mejora la iluminación' }
-  if (box.width < vw * 0.22) return { ok: false, msg: 'Acércate a la cámara' }
-  if (box.width > vw * 0.75) return { ok: false, msg: 'Aléjate un poco' }
-  if (Math.abs(yaw) > 0.18) return { ok: false, msg: 'Mira de frente a la cámara' }
-  if (Math.abs(roll) > 12) return { ok: false, msg: 'Endereza la cabeza' }
-  return { ok: true, msg: 'Perfecto, no te muevas', yaw }
+  const ratio = box.width / vw
+  if (score < 0.5) return { ok: false, level: 1, msg: 'Mejora la iluminación del rostro' }
+  if (ratio < 0.14) return { ok: false, level: 1, msg: 'Acércate un poco a la cámara' }
+  if (ratio > 0.8) return { ok: false, level: 1, msg: 'Aléjate un poco' }
+  if (Math.abs(yaw) > 0.32) return { ok: false, level: 1, msg: 'Mira de frente a la cámara' }
+  if (Math.abs(roll) > 18) return { ok: false, level: 1, msg: 'Endereza la cabeza' }
+  return { ok: true, level: 2, msg: 'Perfecto, quédate así' }
 }
 
 const avg = (arr) => ({ x: arr.reduce((s, p) => s + p.x, 0) / arr.length, y: arr.reduce((s, p) => s + p.y, 0) / arr.length })
@@ -65,10 +77,10 @@ export function distance(a, b) {
 
 /**
  * Busca la mejor coincidencia. members: [{id, full_name, face_descriptors: [[...128]]}]
- * Umbral estricto 0.45 (face-api recomienda 0.6) + margen frente al 2º candidato
+ * Umbral 0.47 (face-api recomienda 0.6) + margen frente al 2º candidato
  * para minimizar falsos positivos.
  */
-export function bestMatch(descriptor, members, threshold = 0.45, margin = 0.06) {
+export function bestMatch(descriptor, members, threshold = 0.47, margin = 0.05) {
   const scored = []
   for (const m of members) {
     const list = m.face_descriptors || []
@@ -84,11 +96,36 @@ export function bestMatch(descriptor, members, threshold = 0.45, margin = 0.06) 
   return { match: first.member, dist: first.dist, confidence: Math.round((1 - first.dist) * 100) }
 }
 
-/** Captura un frame del video como JPEG comprimido (para la foto de perfil). */
-export function snapshot(video, size = 320) {
+/** Dibuja el recuadro del rostro sobre un canvas superpuesto al video (espejado igual que el video). */
+export function drawBox(canvas, video, det, color = '#FFD60A') {
+  if (!canvas || !video) return
+  const w = video.videoWidth, h = video.videoHeight
+  if (canvas.width !== w) canvas.width = w
+  if (canvas.height !== h) canvas.height = h
+  const g = canvas.getContext('2d')
+  g.clearRect(0, 0, w, h)
+  if (!det) return
+  const { x, y, width, height } = det.detection.box
+  const r = Math.min(width, height) * 0.18
+  g.strokeStyle = color; g.lineWidth = Math.max(3, w / 180)
+  // esquinas tipo visor
+  const corner = (cx, cy, dx, dy) => { g.beginPath(); g.moveTo(cx, cy + dy * r); g.lineTo(cx, cy); g.lineTo(cx + dx * r, cy); g.stroke() }
+  corner(x, y, 1, 1); corner(x + width, y, -1, 1); corner(x, y + height, 1, -1); corner(x + width, y + height, -1, -1)
+}
+
+/** Captura la foto de perfil (JPEG). Si se pasa el recuadro del rostro, recorta centrado en la cara. */
+export function snapshot(video, size = 320, box = null) {
   const c = document.createElement('canvas')
-  const ratio = video.videoHeight / video.videoWidth
-  c.width = size; c.height = Math.round(size * ratio)
-  c.getContext('2d').drawImage(video, 0, 0, c.width, c.height)
-  return c.toDataURL('image/jpeg', 0.8)
+  const g = c.getContext('2d')
+  if (box) {
+    const side = Math.min(Math.max(box.width, box.height) * 1.8, video.videoWidth, video.videoHeight)
+    const sx = Math.max(0, Math.min(video.videoWidth - side, box.x + box.width / 2 - side / 2))
+    const sy = Math.max(0, Math.min(video.videoHeight - side, box.y + box.height / 2 - side / 2))
+    c.width = c.height = size
+    g.drawImage(video, sx, sy, side, side, 0, 0, size, size)
+  } else {
+    c.width = size; c.height = Math.round(size * video.videoHeight / video.videoWidth)
+    g.drawImage(video, 0, 0, c.width, c.height)
+  }
+  return c.toDataURL('image/jpeg', 0.82)
 }

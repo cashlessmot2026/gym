@@ -309,3 +309,10 @@ table.t { width: 100%; border-collapse: collapse; font-size: .88rem; }
   .pad-key { height: 44px; }
   .cam { max-height: 70dvh; }
 }
+
+/* ---------- Registro facial ---------- */
+.face-cam { transition: border-color .2s, box-shadow .2s; }
+.face-cam.lvl-1 { border-color: var(--y); }
+.face-cam.lvl-2 { border-color: var(--ok); box-shadow: 0 0 0 3px rgba(34,197,94,.25); }
+.face-cam.lvl-2 .oval { border-color: rgba(34,197,94,.85); border-style: solid; }
+.cam-loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: rgba(0,0,0,.6); color: var(--tx); font-weight: 600; text-align: center; padding: 20px; }

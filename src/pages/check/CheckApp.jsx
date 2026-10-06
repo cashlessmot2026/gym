@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { IdCard, QrCode, Nfc, ScanFace, CheckCircle2, XCircle, Delete, Power, Usb, Maximize, Minimize, Clock } from 'lucide-react'
 import { supabase, q } from '../../lib/supabase'
 import { startNfcScan, nfcSupported } from '../../lib/nfc'
-import { loadFace, detectFace, bestMatch } from '../../lib/face'
+import { loadFace, detectFace, bestMatch, drawBox, preloadFace } from '../../lib/face'
 import { Brand, Avatar, StatusBadge, Spinner, Empty } from '../../components/ui'
 import { QRScanner, useCamera } from '../../components/Media'
 
@@ -47,6 +47,7 @@ export default function CheckApp() {
 
   useEffect(() => {
     loadRecent()
+    preloadFace() // la IA facial queda lista en segundo plano
     const t = setInterval(() => setNow(new Date()), 1000)
     // Mantener la pantalla encendida en tablets/kioscos (si el navegador lo permite)
     let lock
@@ -246,6 +247,7 @@ function NfcReader({ onRead }) {
  */
 function FaceCheck({ onMatch, paused }) {
   const { ref, err, ready } = useCamera(true)
+  const canvasRef = useRef(null)
   const [members, setMembers] = useState(null)
   const [hint, setHint] = useState('Cargando reconocimiento facial…')
   const [modelOk, setModelOk] = useState(false)
@@ -265,7 +267,8 @@ function FaceCheck({ onMatch, paused }) {
     const loop = async () => {
       while (!stop) {
         if (pausedRef.current) { await new Promise((r) => setTimeout(r, 400)); streak = { id: null, n: 0 }; continue }
-        const det = await detectFace(ref.current, 0.7).catch(() => null)
+        const det = await detectFace(ref.current, 0.5).catch(() => null)
+        drawBox(canvasRef.current, ref.current, det)
         if (!det) { setHint('Mira a la cámara'); streak = { id: null, n: 0 } }
         else if (det.detection.box.width < (ref.current.videoWidth || 640) * 0.18) setHint('Acércate un poco')
         else {
@@ -279,7 +282,7 @@ function FaceCheck({ onMatch, paused }) {
             setHint(r.ambiguous ? 'Coincidencia ambigua, mira de frente' : 'Rostro no reconocido')
           }
         }
-        await new Promise((x) => setTimeout(x, 120))
+        await new Promise((x) => setTimeout(x, 60))
       }
     }
     setHint('Mira a la cámara')
@@ -290,11 +293,12 @@ function FaceCheck({ onMatch, paused }) {
   return (
     <div className="card reader-card wide">
       <div className="cam">
-        <video ref={ref} playsInline muted />
+        <video ref={ref} playsInline muted autoPlay />
+        <canvas ref={canvasRef} />
         <div className="oval" />
         <div className="hint">{err || (!modelOk ? <><Spinner size={14} /> Cargando IA…</> : hint)}</div>
       </div>
-      <p className="tiny muted center mt">{members ? `${members.length} rostros registrados` : '…'} · Umbral estricto 0.45 + 3 confirmaciones consecutivas</p>
+      <p className="tiny muted center mt">{members ? `${members.length} rostros registrados` : '…'} · 3 confirmaciones consecutivas</p>
       {members && !members.length && <Empty>Registra rostros desde el formulario de inscripción en /admin</Empty>}
     </div>
   )

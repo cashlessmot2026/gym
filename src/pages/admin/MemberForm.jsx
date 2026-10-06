@@ -6,6 +6,7 @@ import { assignNfcTag, nfcSupported } from '../../lib/nfc'
 import { addDays, today, money } from '../../lib/constants'
 import { Modal, Input, Select, Field, Spinner, Avatar, useToast } from '../../components/ui'
 import { FaceEnroll, QRImage } from '../../components/Media'
+import { preloadFace } from '../../lib/face'
 
 const genCode = () => 'IY-' + Array.from(crypto.getRandomValues(new Uint8Array(5))).map((b) => b.toString(16).padStart(2, '0')).join('').toUpperCase()
 
@@ -21,6 +22,8 @@ export default function MemberForm({ member, plans, coaches, onClose, onSaved })
   const [busy, setBusy] = useState(false)
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }))
   const selPlan = plans.find((p) => p.id === plan.plan_id)
+
+  useEffect(() => { preloadFace() }, []) // descarga la IA mientras se llena el formulario
 
   useEffect(() => {
     // al editar, carga descriptores (no vienen en el listado)
@@ -117,8 +120,8 @@ export default function MemberForm({ member, plans, coaches, onClose, onSaved })
       </div>
       {face && (
         <Modal title="Registro facial" onClose={() => setFace(false)}>
-          <FaceEnroll onDone={({ descriptors, photo }) => { setF((x) => ({ ...x, face_descriptors: descriptors, photo: photo || x.photo })); setFace(false); toast('Rostro registrado', 'success') }} />
-          <p className="tiny muted mt">Se capturan 5 muestras frontales de alta calidad para un reconocimiento preciso (umbral estricto 0.45).</p>
+          <FaceEnroll onDone={({ descriptors, photo }) => { setF((x) => ({ ...x, face_descriptors: descriptors, photo: photo || x.photo })); toast('Rostro registrado', 'success'); setTimeout(() => setFace(false), 900) }} />
+          <p className="tiny muted mt">Se capturan automáticamente 5 muestras del rostro para un reconocimiento preciso.</p>
         </Modal>
       )}
     </Modal>

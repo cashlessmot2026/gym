@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
 import { CheckCircle2, Download, ScanFace, Watch, Bluetooth, BluetoothOff, HeartPulse, Battery } from 'lucide-react'
-import { detectFace, faceQuality, loadFace, snapshot } from '../lib/face'
+import { detectFace, faceQuality, loadFace, snapshot, drawBox } from '../lib/face'
 import { onWatch, pairWatch, unpairWatch, watchState, bleSupported, savedWatch, reconnectWatch } from '../lib/watch'
 import { Spinner, useToast } from './ui'
 
 // ---------- Cámara ----------
-export function useCamera(active = true, facingMode = 'user') {
+// 640×480 basta para el reconocimiento y es mucho más rápido de procesar que HD.
+export function useCamera(active = true, facingMode = 'user', width = 640, height = 480) {
   const ref = useRef(null)
   const [err, setErr] = useState('')
   const [ready, setReady] = useState(false)
@@ -14,79 +15,129 @@ export function useCamera(active = true, facingMode = 'user') {
     if (!active) return
     let stream
     let cancelled = false
-    navigator.mediaDevices?.getUserMedia({ video: { facingMode, width: { ideal: 1280 }, height: { ideal: 960 } }, audio: false })
+    if (!navigator.mediaDevices?.getUserMedia) { setErr('Este navegador no permite usar la cámara (se requiere HTTPS).'); return }
+    navigator.mediaDevices.getUserMedia({ video: { facingMode, width: { ideal: width }, height: { ideal: height } }, audio: false })
       .then((s) => {
         if (cancelled) { s.getTracks().forEach((t) => t.stop()); return }
         stream = s
-        if (ref.current) { ref.current.srcObject = s; ref.current.onloadedmetadata = () => { ref.current.play(); setReady(true) } }
+        const v = ref.current
+        if (!v) return
+        v.srcObject = s
+        const start = () => v.play().then(() => setReady(true)).catch(() => setReady(true))
+        if (v.readyState >= 1) start(); else v.onloadedmetadata = start
       })
-      .catch(() => setErr('No se pudo acceder a la cámara. Revisa los permisos.'))
+      .catch((e) => setErr(e?.name === 'NotAllowedError' ? 'Permiso de cámara denegado. Actívalo en el navegador.' : 'No se pudo acceder a la cámara.'))
     return () => { cancelled = true; stream?.getTracks().forEach((t) => t.stop()); setReady(false) }
-  }, [active, facingMode])
+  }, [active, facingMode, width, height])
   return { ref, err, ready }
 }
 
 /**
- * Enrolamiento facial para el formulario de inscripción:
- * toma 5 muestras de alta calidad (frontal, buena luz, tamaño adecuado).
+ * Registro facial para el formulario de inscripción.
+ * Detección continua con recuadro en vivo y captura AUTOMÁTICA de 5 muestras
+ * cuando el rostro cumple la calidad (frontal, buena luz, tamaño adecuado).
+ * Si en 10 s no lo logra, ofrece una captura manual con requisitos más flexibles.
  */
 export function FaceEnroll({ onDone, samples = 5 }) {
   const { ref, err, ready } = useCamera(true)
+  const canvasRef = useRef(null)
   const [models, setModels] = useState(false)
-  const [hint, setHint] = useState('Cargando modelos de IA…')
-  const [got, setGot] = useState([])
-  const [running, setRunning] = useState(false)
-  const photoRef = useRef(null)
-
-  useEffect(() => { loadFace().then(() => { setModels(true); setHint('Coloca tu rostro dentro del óvalo') }) }, [])
+  const [modelErr, setModelErr] = useState('')
+  const [hint, setHint] = useState('Cargando reconocimiento facial…')
+  const [level, setLevel] = useState(0)
+  const [count, setCount] = useState(0)
+  const [done, setDone] = useState(false)
+  const [manual, setManual] = useState(false)
+  const [round, setRound] = useState(0)
+  const st = useRef({ collected: [], best: null, last: 0, lastDet: null, started: 0 })
 
   useEffect(() => {
-    if (!running || !ready || !models) return
+    loadFace().then(() => setModels(true)).catch(() => setModelErr('No se pudieron cargar los modelos de IA. Revisa la conexión y recarga.'))
+  }, [])
+
+  useEffect(() => {
+    if (!ready || !models) return
     let stop = false
-    const collected = []
+    st.current = { collected: [], best: null, last: 0, lastDet: null, started: Date.now() }
+    setCount(0); setDone(false); setManual(false)
+    const finish = () => {
+      const s = st.current
+      setDone(true); setHint('¡Rostro registrado!'); setLevel(2)
+      onDone({ descriptors: s.collected, photo: s.best ? snapshot(ref.current, 320, s.best.box) : snapshot(ref.current) })
+    }
     const loop = async () => {
-      while (!stop && collected.length < samples) {
-        const det = await detectFace(ref.current, 0.5)
-        const q = faceQuality(det, ref.current)
-        setHint(q.msg)
-        if (q.ok) {
-          const d = Array.from(det.descriptor).map((v) => +v.toFixed(5))
-          // evita muestras casi idénticas: exige pequeña variación entre capturas
-          const dup = collected.some((c) => c.reduce((s, v, i) => s + (v - d[i]) ** 2, 0) < 0.002)
-          if (!dup) {
-            collected.push(d)
-            if (!photoRef.current) photoRef.current = snapshot(ref.current)
-            setGot([...collected])
-            setHint(`Muestra ${collected.length}/${samples} — gira levemente la cabeza`)
-            await new Promise((r) => setTimeout(r, 450))
-          }
+      while (!stop) {
+        const v = ref.current
+        if (!v || v.readyState < 2) { await sleep(100); continue }
+        const det = await detectFace(v, 0.4).catch(() => null)
+        if (stop) break
+        const q = faceQuality(det, v)
+        const s = st.current
+        s.lastDet = det
+        drawBox(canvasRef.current, v, det, q.ok ? '#22c55e' : '#FFD60A')
+        setLevel(q.level)
+        if (s.collected.length < samples) {
+          if (q.ok && Date.now() - s.last > 300) {
+            s.collected.push(Array.from(det.descriptor).map((x) => +x.toFixed(5)))
+            s.last = Date.now()
+            if (!s.best || det.detection.score > s.best.score) s.best = { score: det.detection.score, box: det.detection.box }
+            setCount(s.collected.length)
+            setHint(s.collected.length < samples ? `Capturando ${s.collected.length}/${samples}… no te muevas` : '¡Listo!')
+            if (s.collected.length >= samples) { finish(); break }
+          } else if (!q.ok) setHint(q.msg)
+          if (!s.collected.length && Date.now() - s.started > 10000) setManual(true)
         }
-        await new Promise((r) => setTimeout(r, 80))
-      }
-      if (!stop) {
-        setRunning(false)
-        setHint('¡Rostro registrado!')
-        onDone({ descriptors: collected, photo: photoRef.current })
+        await sleep(60)
       }
     }
+    setHint('Coloca tu rostro dentro del óvalo')
     loop()
     return () => { stop = true }
-  }, [running, ready, models])
+  }, [ready, models, round])
 
+  // Captura manual: acepta cualquier rostro detectado (útil con poca luz o cámaras de baja calidad)
+  const captureManual = async () => {
+    const v = ref.current
+    const list = []
+    let best = null
+    for (let i = 0; i < 12 && list.length < 3; i++) {
+      const det = await detectFace(v, 0.3).catch(() => null)
+      if (det) {
+        list.push(Array.from(det.descriptor).map((x) => +x.toFixed(5)))
+        if (!best || det.detection.score > best.score) best = { score: det.detection.score, box: det.detection.box }
+      }
+      await sleep(150)
+    }
+    if (!list.length) { setHint('No se detecta ningún rostro. Acércate y busca más luz.'); return }
+    const merged = [...st.current.collected, ...list]
+    st.current.collected = merged
+    setCount(Math.min(samples, merged.length)); setDone(true); setHint('¡Rostro registrado!')
+    onDone({ descriptors: merged, photo: snapshot(v, 320, best.box) })
+  }
+
+  const loadingStage = modelErr || err || (!ready ? 'Abriendo cámara…' : !models ? 'Cargando reconocimiento facial…' : null)
   return (
     <div className="col">
-      <div className="cam">
-        <video ref={ref} playsInline muted />
+      <div className={`cam face-cam lvl-${done ? 2 : level}`}>
+        <video ref={ref} playsInline muted autoPlay />
+        <canvas ref={canvasRef} />
         <div className="oval" />
-        <div className="hint">{err || hint}</div>
+        {loadingStage && <div className="cam-loading">{!(modelErr || err) && <Spinner size={28} />}<span>{loadingStage}</span></div>}
+        {!loadingStage && <div className="hint">{hint}</div>}
       </div>
-      <div className="progress"><div style={{ width: `${(got.length / samples) * 100}%` }} /></div>
-      <button type="button" className="btn primary block" disabled={!models || !ready || running} onClick={() => { setGot([]); photoRef.current = null; setRunning(true) }}>
-        {!models ? <><Spinner /> Cargando IA</> : running ? <><Spinner /> Capturando…</> : got.length === samples ? <><CheckCircle2 size={18} /> Volver a capturar</> : <><ScanFace size={18} /> Iniciar captura facial</>}
-      </button>
+      <div className="row" style={{ gap: 6 }}>
+        {Array.from({ length: samples }).map((_, i) => <div key={i} className="grow" style={{ height: 8, borderRadius: 6, background: i < count ? 'var(--ok)' : 'var(--card2)', transition: '.2s' }} />)}
+      </div>
+      <p className="tiny muted center" style={{ margin: 0 }}>Mira de frente, con buena luz y sin gorra ni lentes oscuros. La captura es automática.</p>
+      <div className="row">
+        {manual && !done && <button type="button" className="btn grow" onClick={captureManual}><ScanFace size={16} /> Capturar ahora</button>}
+        {done && <button type="button" className="btn grow" onClick={() => setRound((r) => r + 1)}><CheckCircle2 size={16} /> Repetir captura</button>}
+      </div>
     </div>
   )
 }
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 // ---------- Escáner QR ----------
 export function QRScanner({ onScan, active = true }) {
