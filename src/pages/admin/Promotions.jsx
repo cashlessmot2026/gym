@@ -26,10 +26,10 @@ const DESTINATIONS = [
 ]
 
 const AUDIENCES = [
-  { id: 'all', label: 'Todos los clientes' },
+  { id: 'all', label: 'Todos los clientes (activos e inactivos)' },
   { id: 'active', label: 'Membresía activa' },
   { id: 'expiring', label: 'Por vencer (≤5 días)' },
-  { id: 'expired', label: 'Vencidos / sin plan' },
+  { id: 'expired', label: 'Vencidos / sin plan / inactivos' },
   { id: 'modes', label: 'Por modalidad' },
   { id: 'members', label: 'Clientes específicos' }
 ]
@@ -51,11 +51,11 @@ export default function Promotions({ data, me }) {
   const [upl, setUpl] = useState(false)
   const [external, setExternal] = useState('')
   const [term, setTerm] = useState('')
-  const [f, setF] = useState({ category: 'promo', title: '', body: '', image_url: '', url: '/', audience: { type: 'all' } })
+  const [f, setF] = useState({ category: 'none', title: '', body: '', image_url: '', url: '/', audience: { type: 'all' } })
 
   const loadHistory = () => q(supabase.from('notifications').select('*').order('created_at', { ascending: false }).limit(100)).then(setHistory)
   useEffect(() => {
-    q(supabase.from('members').select('id, full_name, photo, training_modes, active').eq('active', true).order('full_name')).then(setMembers)
+    q(supabase.from('members').select('id, full_name, photo, training_modes, active').order('full_name')).then(setMembers)
     q(supabase.from('push_subscriptions').select('member_id, platform')).then(setSubs).catch(() => setSubs([]))
     loadHistory()
   }, [])
@@ -68,7 +68,8 @@ export default function Promotions({ data, me }) {
     if (a.type === 'members') return a.ids || []
     if (a.type === 'modes') return members.filter((m) => (m.training_modes || []).some((x) => (a.modes || []).includes(x))).map((m) => m.id)
     const ok = { active: ['activa', 'por_vencer'], expiring: ['por_vencer'], expired: ['vencida', 'sin_plan'] }[a.type]
-    return members.filter((m) => ok.includes(statusById[m.id])).map((m) => m.id)
+    // "Vencidos" incluye también a los clientes inactivos; "activa" y "por vencer" solo a los activos
+    return members.filter((m) => (a.type === 'expired' && !m.active) || (m.active && ok.includes(statusById[m.id]))).map((m) => m.id)
   }, [members, f.audience, statusById])
   const reachable = useMemo(() => {
     const set = new Set(recipients)
@@ -94,7 +95,7 @@ export default function Promotions({ data, me }) {
   }
 
   const send = async () => {
-    if (!f.title.trim() || !f.body.trim()) return toast('Escribe un título y un mensaje', 'error')
+    if (!f.title.trim()) return toast('Escribe un título para la notificación', 'error')
     if (f.audience.type !== 'all' && !recipients.length) return toast('La audiencia seleccionada no tiene clientes', 'error')
     const url = f.url === 'external' ? external.trim() : f.url
     if (f.url === 'external' && !/^https?:\/\//.test(url)) return toast('El enlace externo debe empezar por https://', 'error')
@@ -102,12 +103,13 @@ export default function Promotions({ data, me }) {
     setBusy(true)
     try {
       const [n] = await q(supabase.from('notifications').insert({
-        title: f.title.trim(), body: f.body.trim(), image_url: f.image_url || null, url, category: f.category,
+        title: f.title.trim(), body: f.body.trim(), image_url: f.image_url || null, url, category: f.category === 'none' ? 'aviso' : f.category,
         audience: f.audience, recipients: f.audience.type === 'all' ? null : recipients, created_by: me.id
       }).select())
       try {
         const r = await dispatchPush(n.id)
-        toast(`✅ Enviada a ${r.sent} dispositivos${r.failed ? ` · ${r.failed} fallidos` : ''}`, 'success')
+        const why = r.reasons?.length ? ` (${r.reasons.join('; ')})` : ''
+        toast(`${r.failed && !r.sent ? '⚠️' : '✅'} Enviada a ${r.sent} dispositivos${r.local ? ` + ${r.local} app Android (se recoge en ~15 min)` : ''}${r.failed ? ` · ${r.failed} fallidos${why}` : ''}`, r.failed && !r.sent ? 'error' : 'success')
       } catch (e) {
         await q(supabase.from('notifications').update({ status: 'enviada', sent_at: new Date().toISOString(), error: 'Solo en la app (push no configurado): ' + e.message }).eq('id', n.id))
         toast('Publicada en la app. Para push con la app cerrada despliega la función send-push.', 'info')
@@ -126,7 +128,7 @@ export default function Promotions({ data, me }) {
   const del = async (id) => { if (window.confirm('¿Eliminar del historial? Los clientes dejarán de verla en su bandeja.')) { await q(supabase.from('notifications').delete().eq('id', id)); loadHistory() } }
 
   const sent30 = (history || []).filter((n) => n.created_at >= addDays(today(), -30))
-  const C = CATEGORY[f.category]
+  const C = CATEGORY[f.category] || CATEGORY.aviso
   if (!members || !history) return <Loading />
 
   return (
@@ -146,11 +148,11 @@ export default function Promotions({ data, me }) {
             <div className="row wrap" style={{ gap: 6 }}>{TEMPLATES.map((t) => <button key={t.title} className="chip" onClick={() => setF((x) => ({ ...x, ...t }))}>{t.title.split(' ').slice(0, 3).join(' ')}</button>)}</div>
           </Field>
           <div className="grid g2 mt">
-            <Select label="Tipo" value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })} options={Object.entries(CATEGORY).filter(([value]) => value !== 'reto').map(([value, c]) => ({ value, label: c.label }))} />
+            <Select label="Tipo" value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })} options={[{ value: 'none', label: 'Sin tipo (general)' }, ...Object.entries(CATEGORY).filter(([value]) => value !== 'reto' && value !== 'aviso').map(([value, c]) => ({ value, label: c.label })), { value: 'aviso', label: 'Aviso' }]} />
             <Select label="Al tocar, abrir…" value={f.url} onChange={(e) => setF({ ...f, url: e.target.value })} options={DESTINATIONS} />
             {f.url === 'external' && <Input label="Enlace externo" value={external} onChange={(e) => setExternal(e.target.value)} placeholder="https://…" span={2} />}
             <Field label={`Título (${f.title.length}/60)`} span={2}><input className="input" maxLength={60} value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder="🔥 ¡Promo de la semana!" /></Field>
-            <Field label={`Mensaje (${f.body.length}/180)`} span={2}><textarea className="input" maxLength={180} value={f.body} onChange={(e) => setF({ ...f, body: e.target.value })} placeholder="Describe la promoción…" /></Field>
+            <Field label={`Mensaje opcional (${f.body.length}/180)`} span={2}><textarea className="input" maxLength={180} value={f.body} onChange={(e) => setF({ ...f, body: e.target.value })} placeholder="Opcional: no hace falta escribir un motivo o mensaje" /></Field>
             <Field label="Imagen (opcional)" span={2}>
               <div className="row">
                 <input className="input" value={f.image_url} onChange={(e) => setF({ ...f, image_url: e.target.value })} placeholder="URL de la imagen o súbela →" />
@@ -173,7 +175,7 @@ export default function Promotions({ data, me }) {
                   const on = (f.audience.ids || []).includes(m.id)
                   return (
                     <label key={m.id} className="row" style={{ padding: 6, borderRadius: 8, cursor: 'pointer', background: on ? 'var(--y-soft)' : 'transparent' }}>
-                      <input type="checkbox" checked={on} onChange={() => toggleIn('ids', m.id)} /><Avatar src={m.photo} name={m.full_name} /><span className="grow">{m.full_name}</span>
+                      <input type="checkbox" checked={on} onChange={() => toggleIn('ids', m.id)} /><Avatar src={m.photo} name={m.full_name} /><span className="grow">{m.full_name}{!m.active && <span className="tiny muted"> · inactivo</span>}</span>
                       {subs.some((s) => s.member_id === m.id) && <BellRing size={14} className="y" />}
                     </label>
                   )

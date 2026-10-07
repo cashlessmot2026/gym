@@ -39,9 +39,10 @@ async function resolveRecipients(a: any): Promise<string[] | null> {
   const active = (rows ?? []).filter((r: any) => r.active);
   if (a.type === "active") return active.filter((r: any) => ["activa", "por_vencer"].includes(r.status)).map((r: any) => r.member_id);
   if (a.type === "expiring") return active.filter((r: any) => r.status === "por_vencer").map((r: any) => r.member_id);
-  if (a.type === "expired") return active.filter((r: any) => ["vencida", "sin_plan"].includes(r.status)).map((r: any) => r.member_id);
+  // "Vencidos" incluye también a los clientes inactivos
+  if (a.type === "expired") return (rows ?? []).filter((r: any) => !r.active || ["vencida", "sin_plan"].includes(r.status)).map((r: any) => r.member_id);
   if (a.type === "modes") {
-    const { data, error: e2 } = await db.from("members").select("id").eq("active", true).overlaps("training_modes", a.modes ?? []);
+    const { data, error: e2 } = await db.from("members").select("id").overlaps("training_modes", a.modes ?? []);
     if (e2) throw e2;
     return (data ?? []).map((m: any) => m.id);
   }
@@ -139,6 +140,7 @@ Deno.serve(async (req) => {
     const payload = JSON.stringify({ id: n.id, title: n.title, body: n.body, image: n.image_url, url: n.url ?? "/", category: n.category, urgent });
     let sent = 0, failed = 0, local = 0; // local = apps Android que la recogen solas (cada ~15 min), no es un envío push
     const dead: string[] = [];
+    const reasons = new Map<string, number>(); // motivo del fallo -> cuántos dispositivos
 
     for (let i = 0; i < (subs ?? []).length; i += 50) {
       const chunk = subs!.slice(i, i + 50);
@@ -156,8 +158,17 @@ Deno.serve(async (req) => {
         if (r.status === "fulfilled") { if (r.value === "local") local++; else sent++; }
         else {
           failed++;
-          const code = (r.reason as any)?.statusCode;
-          if (code === 404 || code === 410) dead.push(chunk[k].id); // suscripción caducada
+          const why: any = r.reason;
+          const code = why?.statusCode;
+          const body = String(why?.body ?? why?.message ?? "");
+          // 404/410: suscripción caducada. 403 "VAPID…": se creó con otra clave y nunca podrá recibir → se elimina
+          // para que el dispositivo se vuelva a registrar solo al abrir la app.
+          const vapidMismatch = code === 403 && /VAPID/i.test(body);
+          if (code === 404 || code === 410 || vapidMismatch) dead.push(chunk[k].id);
+          const label = vapidMismatch ? "suscripción web con una clave antigua (el cliente debe abrir la app para renovarla)"
+            : (code === 404 || code === 410) ? "suscripción caducada o desinstalada"
+            : `${code ?? "error"}: ${body.slice(0, 80)}`;
+          reasons.set(label, (reasons.get(label) ?? 0) + 1);
         }
       });
     }
@@ -165,9 +176,10 @@ Deno.serve(async (req) => {
 
     await db.from("notifications").update({
       status: "enviada", sent_count: sent, failed_count: failed, devices_count: subs?.length ?? 0, sent_at: new Date().toISOString(),
-      error: VAPID_OK ? null : "Push web no enviado: faltan las claves VAPID en Supabase",
+      error: !VAPID_OK ? "Push web no enviado: faltan las claves VAPID en Supabase"
+        : reasons.size ? [...reasons].map(([m, n]) => `${n} × ${m}`).join(" · ") : null,
     }).eq("id", id);
-    return json({ sent, failed, local, devices: subs?.length ?? 0, removed: dead.length, vapid: VAPID_OK });
+    return json({ sent, failed, local, devices: subs?.length ?? 0, removed: dead.length, vapid: VAPID_OK, reasons: [...reasons].map(([m, n]) => `${n} × ${m}`) });
   } catch (e) {
     if (id) await db.from("notifications").update({ status: "error", error: (e as Error).message }).eq("id", id);
     return json({ error: (e as Error).message }, 500);
