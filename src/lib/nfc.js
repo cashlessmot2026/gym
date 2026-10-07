@@ -1,7 +1,11 @@
 // NFC:
-// - APK Android (Capacitor): lector nativo con @capgo/capacitor-nfc (el WebView NO soporta Web NFC).
+// - APK Android (Capacitor): plugin propio IyNfc (android/.../IyNfcPlugin.java) con "foreground dispatch":
+//   mientras el lector está encendido, la app recibe el tag y el sistema NO abre la app de NFC del teléfono.
 // - Chrome en Android / PWA: Web NFC (NDEFReader).
 // - Escritorio: lectores NFC USB que funcionan como teclado (escriben el UID y Enter).
+import { registerPlugin } from '@capacitor/core'
+
+const IyNfc = registerPlugin('IyNfc')
 const isNative = () => typeof window !== 'undefined' && !!window.Capacitor?.isNativePlatform?.()
 export const nfcSupported = () => typeof window !== 'undefined' && (isNative() || 'NDEFReader' in window)
 
@@ -15,66 +19,37 @@ const decodeRecords = (message) => {
   return out
 }
 
-// ---------- Nativo (APK) ----------
-const hexUid = (bytes = []) => bytes.map((b) => (b & 0xff).toString(16).padStart(2, '0')).join(':') // 04:fd:1d:...
-
-/** Texto de los registros NDEF del plugin nativo (registros de texto "T" y URI "U"). */
-function decodeNative(ndef = []) {
-  const out = []
-  for (const r of ndef || []) {
-    try {
-      const p = (r.payload || []).map((b) => b & 0xff)
-      const t = (r.type || []).map((b) => String.fromCharCode(b)).join('')
-      if (t === 'T' && p.length) out.push(new TextDecoder().decode(new Uint8Array(p.slice(1 + (p[0] & 0x3f)))))
-      else if (t === 'U' && p.length) out.push(new TextDecoder().decode(new Uint8Array(p.slice(1))))
-    } catch { /* registro no legible */ }
-  }
-  return out
-}
-
 /** Evita que un paso nativo se quede colgado sin avisar. */
 const withTimeout = (p, ms, what) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(`${what}: el teléfono no respondió en ${ms / 1000} s`)), ms))])
 
-async function nativeNfc(log = () => {}) {
-  log('Cargando lector nativo…')
-  const { CapacitorNfc } = await withTimeout(import('@capgo/capacitor-nfc'), 6000, 'Cargar el plugin NFC')
-  log('Plugin cargado ✓')
-  const { supported } = await withTimeout(CapacitorNfc.isSupported(), 4000, 'Comprobar NFC')
-  if (!supported) throw new Error('Este teléfono no tiene NFC')
-  const { status } = await withTimeout(CapacitorNfc.getStatus(), 4000, 'Leer el estado del NFC')
-  log(`Estado NFC: ${status}`)
-  if (status === 'NFC_DISABLED') throw new Error('El NFC está apagado. Actívalo en los ajustes del teléfono.')
-  return CapacitorNfc
-}
-
 /** Abre los ajustes de NFC del teléfono (APK). */
 export async function openNfcSettings() {
-  if (!isNative()) return
-  const { CapacitorNfc } = await import('@capgo/capacitor-nfc')
-  await CapacitorNfc.showSettings()
+  if (isNative()) await IyNfc.openSettings()
 }
 
 async function startNative({ onRead, ms, onEnd, log = () => {} }) {
-  const Nfc = await nativeNfc(log)
+  log('Comprobando NFC…')
+  const st = await withTimeout(IyNfc.status(), 4000, 'Leer el estado del NFC')
+  log(`NFC: ${st.supported ? (st.enabled ? 'encendido' : 'apagado') : 'no disponible'}`)
   let stopped = false
-  const handle = await withTimeout(Nfc.addListener('nfcEvent', (e) => {
+  const handle = await withTimeout(IyNfc.addListener('tag', (e) => {
     if (stopped) return
-    log('Tag detectado')
-    onRead?.({ serial: hexUid(e.tag?.id), texts: decodeNative(e.tag?.ndefMessage) })
+    log(`Tag detectado ${e.serial || ''}`)
+    onRead?.({ serial: e.serial || '', texts: e.texts || [] })
   }), 4000, 'Escuchar tags')
-  await withTimeout(Nfc.startScanning({ invalidateAfterFirstRead: false, alertMessage: 'Acerca el tag al teléfono' }), 4000, 'Encender el lector')
+  await withTimeout(IyNfc.start(), 4000, 'Encender el lector')
   log('Lector encendido ✓ acerca un tag')
   const stop = () => {
     if (stopped) return
     stopped = true; clearTimeout(timer)
-    handle.remove?.(); Nfc.stopScanning?.().catch(() => {}); onEnd?.()
+    handle.remove?.(); IyNfc.stop().catch(() => {}); onEnd?.()
   }
   const timer = ms ? setTimeout(stop, ms) : null
   return stop
 }
 
 /**
- * Lee tags durante `ms` milisegundos. Llama onRead({serial, texts}).
+ * Lee tags durante `ms` milisegundos (0 = hasta que se detenga). Llama onRead({serial, texts}).
  * Devuelve una función para detener la lectura.
  */
 export async function startNfcScan({ onRead, onError, ms = 5000, onEnd, log }) {
@@ -89,38 +64,20 @@ export async function startNfcScan({ onRead, onError, ms = 5000, onEnd, log }) {
   return () => { clearTimeout(timer); ctrl.abort(); onEnd?.() }
 }
 
-/** Escribe el código como registro de texto NDEF con el plugin nativo. */
-function textRecord(code) {
-  const enc = new TextEncoder()
-  const lang = Array.from(enc.encode('es'))
-  return { tnf: 0x01, type: [0x54], id: [], payload: [lang.length & 0x3f, ...lang, ...Array.from(enc.encode(code))] }
-}
-
 /**
- * Asigna un tag: espera que se acerque, obtiene su número de serie (UID)
- * y escribe el código del socio como registro de texto.
+ * Asigna un tag: espera que se acerque y obtiene su número de serie (UID).
+ * En el navegador también escribe el código del socio como registro de texto (si el tag lo permite).
  */
 export function assignNfcTag(code, ms = 15000) {
   return new Promise(async (resolve, reject) => {
     if (!nfcSupported()) return reject(new Error('NFC no disponible en este dispositivo. Puedes escribir el UID manualmente o usar un lector USB.'))
 
     if (isNative()) {
-      let done = false
       let stop = null
-      const timer = setTimeout(() => { if (!done) { done = true; stop?.(); reject(new Error('Tiempo agotado: no se detectó ningún tag')) } }, ms)
+      const timer = setTimeout(() => { stop?.(); reject(new Error('Tiempo agotado: no se detectó ningún tag')) }, ms)
       try {
-        const Nfc = await nativeNfc()
-        const handle = await Nfc.addListener('nfcEvent', async (e) => {
-          if (done) return
-          done = true; clearTimeout(timer)
-          const uid = hexUid(e.tag?.id)
-          try { await Nfc.write({ allowFormat: true, records: [textRecord(code)] }) } catch { /* tag de sólo lectura: se usa sólo el UID */ }
-          handle.remove?.(); Nfc.stopScanning?.().catch(() => {})
-          resolve(uid || code)
-        })
-        await Nfc.startScanning({ invalidateAfterFirstRead: false, alertMessage: 'Acerca el tag al teléfono' })
-        stop = () => { handle.remove?.(); Nfc.stopScanning?.().catch(() => {}) }
-      } catch (err) { clearTimeout(timer); done = true; reject(err) }
+        stop = await startNative({ ms: 0, onRead: (r) => { clearTimeout(timer); stop?.(); resolve(r.serial || code) } })
+      } catch (err) { clearTimeout(timer); reject(err) }
       return
     }
 
@@ -144,11 +101,9 @@ export function assignNfcTag(code, ms = 15000) {
 export async function nfcStatus() {
   if (isNative()) {
     try {
-      const { CapacitorNfc } = await import('@capgo/capacitor-nfc')
-      const { supported } = await CapacitorNfc.isSupported()
+      const { supported, enabled } = await withTimeout(IyNfc.status(), 4000, 'Leer el estado del NFC')
       if (!supported) return { kind: 'native', supported: false, enabled: false, detail: 'Este teléfono no tiene NFC' }
-      const { status } = await CapacitorNfc.getStatus()
-      return { kind: 'native', supported: true, enabled: status === 'NFC_OK', detail: status === 'NFC_OK' ? 'NFC encendido' : status === 'NFC_DISABLED' ? 'NFC apagado: actívalo en los ajustes del teléfono' : status }
+      return { kind: 'native', supported: true, enabled, detail: enabled ? 'NFC encendido' : 'NFC apagado: actívalo en los ajustes del teléfono' }
     } catch (e) {
       return { kind: 'native', supported: false, enabled: false, detail: 'No se pudo cargar el lector nativo: ' + (e?.message || e) }
     }
