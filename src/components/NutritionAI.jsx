@@ -5,7 +5,7 @@ import { askNutritionist, nutritionUpdates, OFFICIAL_SOURCES } from '../lib/nutr
 import { computeAll } from '../lib/fitness'
 import { GOALS, calcAge } from '../lib/constants'
 import { nutritionPdf } from '../lib/pdf'
-import { Markdown, Spinner } from './ui'
+import { Markdown, Spinner, useToast } from './ui'
 
 const PROMPTS = [
   ['🍽️ Dieta del día', 'Dame un plan de alimentación detallado para hoy con cantidades y horarios.'],
@@ -51,11 +51,16 @@ export default function NutritionAI({ member }) {
   }
 
   const lastAnswer = [...msgs].reverse().find((m) => m.role === 'assistant' && m.text)
-  const pdfAll = () => nutritionPdf({
+  const toast = useToast()
+  const makePdf = async (opts) => {
+    try { await nutritionPdf(opts); toast('PDF generado', 'success') }
+    catch (e) { console.error('[pdf]', e); toast('No se pudo generar el PDF: ' + (e?.message || e), 'error') }
+  }
+  const pdfAll = () => makePdf({
     title: 'Plan de nutrición y recomendaciones', member, metrics: profile,
     markdown: msgs.filter((m) => m.role === 'assistant').map((m) => m.text).join('\n\n')
   })
-  const pdfLast = () => nutritionPdf({ title: 'Recomendación nutricional', member, metrics: profile, markdown: lastAnswer.text })
+  const pdfLast = () => makePdf({ title: 'Recomendación nutricional', member, metrics: profile, markdown: lastAnswer.text })
 
   return (
     <div className="grid" style={{ gridTemplateColumns: 'minmax(0, 1fr)', gap: 14, minWidth: 0 }}>

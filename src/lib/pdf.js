@@ -6,7 +6,7 @@ const BLACK = [10, 10, 10]
 const clean = (s) => s.replace(/\*\*|__|`|_/g, '').replace(/[^\x20-\x7EáéíóúÁÉÍÓÚñÑüÜ¿¡°·–—…•%$€\n]/g, '').trim()
 
 /** Convierte el texto Markdown del nutricionista en un PDF con la marca del gym. */
-export function nutritionPdf({ title = 'Plan de nutrición', member = {}, metrics = {}, markdown = '' }) {
+export async function nutritionPdf({ title = 'Plan de nutrición', member = {}, metrics = {}, markdown = '' }) {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' })
   const W = doc.internal.pageSize.getWidth()
   const H = doc.internal.pageSize.getHeight()
@@ -86,5 +86,23 @@ export function nutritionPdf({ title = 'Plan de nutrición', member = {}, metric
     doc.setPage(p); doc.setFontSize(8); doc.setTextColor(140)
     doc.text(`IronYellow Gym · Página ${p}/${pages} · Este plan es orientativo, no sustituye la consulta médica.`, W / 2, H - 20, { align: 'center' })
   }
-  doc.save(`${clean(title).replace(/\s+/g, '_')}_${(member.full_name || 'cliente').replace(/\s+/g, '_')}.pdf`)
+  const name = `${title}_${member.full_name || 'cliente'}`.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w-]+/g, '_').replace(/^_+|_+$/g, '') + '.pdf'
+  await deliverPdf(doc, name)
+  return name
+}
+
+/**
+ * Entrega el PDF: en el APK (WebView) la descarga por enlace no funciona, así que se guarda
+ * en la caché de la app y se abre el menú de compartir/guardar del teléfono. En el navegador se descarga.
+ */
+async function deliverPdf(doc, name) {
+  if (typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.()) {
+    const { Filesystem, Directory } = await import('@capacitor/filesystem')
+    const { Share } = await import('@capacitor/share')
+    const data = doc.output('datauristring').split(',')[1]
+    const f = await Filesystem.writeFile({ path: name, data, directory: Directory.Cache, recursive: true })
+    await Share.share({ title: name, dialogTitle: 'Guardar o compartir el PDF', url: f.uri })
+    return
+  }
+  doc.save(name)
 }
