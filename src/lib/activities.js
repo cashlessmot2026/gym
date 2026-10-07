@@ -1,72 +1,36 @@
-// Guarda actividades de pulseras/relojes (Health Connect, FIT, TCX, GPX) y,
-// después de cada carga, sincroniza el ranking y los retos del cliente.
+// Historial de actividad del cliente: sus rutinas hechas en la app (tabla workout_sessions)
+// y las actividades guardadas anteriormente (tabla activities).
+// Tras terminar una rutina se actualizan el ranking y los retos.
 import { supabase, q } from './supabase'
 import { refreshScore } from './ranking'
 import { refreshChallenges } from './challenges'
-import { healthConsented, healthSupported, readHealthWorkouts, readHealthDaily } from './health'
-import { hrProfile } from './hr'
 
-/** Inserta las actividades nuevas (las repetidas se ignoran). Devuelve cuántas eran nuevas. */
-export async function saveActivities(member, list) {
-  if (!list.length) return 0
-  const keys = list.map((a) => a.dedupe_key)
-  const existing = await q(supabase.from('activities').select('dedupe_key').eq('member_id', member.id).in('dedupe_key', keys))
-  const have = new Set(existing.map((x) => x.dedupe_key))
-  const fresh = list.filter((a, i) => !have.has(a.dedupe_key) && keys.indexOf(a.dedupe_key) === i)
-  if (fresh.length) {
-    await q(supabase.from('activities').upsert(fresh.map((a) => ({ ...a, member_id: member.id })), { onConflict: 'member_id,dedupe_key', ignoreDuplicates: true }))
-  }
-  await afterSync(member)
-  return fresh.length
-}
-
-/** Ranking + retos al día tras cualquier carga de datos. */
+/** Ranking + retos al día tras terminar una rutina o guardar medidas. */
 export async function afterSync(member) {
   await Promise.all([refreshScore(member), refreshChallenges(member.id)]).catch((e) => console.warn('[sync]', e))
 }
 
-export async function latestWeight(memberId) {
-  const r = await q(supabase.from('body_metrics').select('weight').eq('member_id', memberId).not('weight', 'is', null).order('date', { ascending: false }).limit(1))
-  return r[0]?.weight ? Number(r[0].weight) : 70
+/** Rutinas terminadas en la app, con el mismo formato que las actividades. */
+async function listWorkouts(memberId, limit) {
+  const rows = await q(supabase.from('workout_sessions').select('*').eq('member_id', memberId).not('ended_at', 'is', null).order('started_at', { ascending: false }).limit(limit))
+  return rows.map((s) => ({
+    id: `ws-${s.id}`, source: 'rutina', sport: 'fuerza', title: 'Rutina de entrenamiento', started_at: s.started_at,
+    duration_sec: s.total_sec || 0, distance_m: 0, calories: Number(s.calories) || 0, steps: 0,
+    avg_hr: s.avg_hr, max_hr: s.max_hr, hr_zones: s.hr_zones || null, hr_series: null, route: null, device: 'IronYellow'
+  }))
 }
 
-/**
- * Sincroniza Health Connect desde la última vez (o 30 días). Se llama sola al
- * abrir la app si el cliente ya dio permiso. Devuelve cuántas actividades nuevas.
- */
-/** Detalle de la última sincronización (para mostrar al usuario qué se leyó). */
-export const syncInfo = { workouts: 0, days: 0, steps: 0 }
-
-export async function syncHealth(member) {
-  if (!healthSupported() || !healthConsented()) return 0
-  const profile = hrProfile(member, await latestWeight(member.id))
-  // 1 h de margen por entrenamientos que la pulsera sube con retraso
-  const since = member.health_last_sync ? new Date(new Date(member.health_last_sync).getTime() - 3600000) : null
-  const list = await readHealthWorkouts(since, profile)
-  syncInfo.workouts = list.length; syncInfo.days = 0; syncInfo.steps = 0
-  const n = await saveActivities(member, list)
-  // Historial por día: se reescriben los últimos 3 días (los datos de hoy cambian durante el día)
-  try {
-    const daily = await readHealthDaily(since ? new Date(since.getTime() - 2 * 86400000) : null)
-    syncInfo.days = daily.length; syncInfo.steps = daily.reduce((t, d) => t + (d.steps || 0), 0)
-    await saveHealthDaily(member, daily)
-  } catch (e) { console.warn('[health-daily]', e) }
-  await supabase.from('members').update({ health_last_sync: new Date().toISOString() }).eq('id', member.id)
-  return n
+/** Historial unificado (más reciente primero). */
+export async function listActivities(memberId, limit = 60) {
+  const [saved, workouts] = await Promise.all([
+    q(supabase.from('activities').select('*').eq('member_id', memberId).order('started_at', { ascending: false }).limit(limit)),
+    listWorkouts(memberId, limit).catch(() => [])
+  ])
+  return [...saved, ...workouts].sort((a, b) => new Date(b.started_at) - new Date(a.started_at)).slice(0, limit)
 }
 
-/** Guarda (o actualiza) el resumen diario. Un día = una fila. */
-export async function saveHealthDaily(member, rows) {
-  if (!rows.length) return 0
-  const now = new Date().toISOString()
-  await q(supabase.from('health_daily').upsert(rows.map((r) => ({ ...r, member_id: member.id, updated_at: now })), { onConflict: 'member_id,day' }))
-  return rows.length
-}
-
+/** Resumen diario guardado anteriormente (si existe). */
 export const listHealthDaily = (memberId, days = 120) => {
   const from = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10)
   return q(supabase.from('health_daily').select('*').eq('member_id', memberId).gte('day', from).order('day'))
 }
-
-export const listActivities = (memberId, limit = 60) =>
-  q(supabase.from('activities').select('*').eq('member_id', memberId).order('started_at', { ascending: false }).limit(limit))

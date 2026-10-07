@@ -17,7 +17,6 @@ import Onboarding from './Onboarding'
 import Training from './Training'
 import Classes from './Classes'
 import { memberSchedules } from '../../lib/classes'
-import { syncHealth } from '../../lib/activities'
 import Feed from './Feed'
 import SocialProfile from './SocialProfile'
 import Ranking from './Ranking'
@@ -86,11 +85,7 @@ function ClientMain({ me, status, types, tab, setTab, saveProfile, onLogout }) {
   const openProfile = (id) => { if (id === me.id) go('me'); else { setViewing(id); window.scrollTo({ top: 0 }) } }
   const challenge = (m) => { setRival(m); go('challenges') }
 
-  // Pulsera: al abrir la app se sincroniza Health Connect (si ya dio permiso)
   const toast = useToast()
-  useEffect(() => {
-    syncHealth(me).then((n) => n && toast(`⌚ ${n} actividad${n > 1 ? 'es' : ''} nueva${n > 1 ? 's' : ''} de tu pulsera`, 'success')).catch((e) => console.warn('[health]', e))
-  }, [me.id])
   // Abre el destino de una notificación: pestaña interna (?tab=...) o enlace externo
   const openUrl = (url) => {
     if (!url) return

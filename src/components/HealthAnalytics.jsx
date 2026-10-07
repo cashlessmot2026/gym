@@ -3,7 +3,7 @@ import { ResponsiveContainer, BarChart, Bar, AreaChart, Area, LineChart, Line, X
 import { Footprints, Flame, Route, Timer, HeartPulse, Moon, Trophy, TrendingUp, TrendingDown, Minus, Activity } from 'lucide-react'
 import { listActivities, listHealthDaily } from '../lib/activities'
 import { fmtTime } from '../lib/constants'
-import { SPORT_ICON } from '../lib/activityFiles'
+import { SPORT_ICON } from '../lib/sports'
 import { Loading, Empty, Stat, useToast } from './ui'
 import { CHART, tip } from './Analytics'
 import { ZoneBar } from './Activities'
@@ -93,12 +93,12 @@ export default function HealthAnalytics({ member }) {
       dist: best(acts, (a) => Number(a.distance_m)), long: best(acts, (a) => a.duration_sec), maxhr: best(acts, (a) => a.max_hr),
       steps: best(daily, (d) => d.steps), kcal: best(daily, (d) => Number(d.calories))
     }
-    return { series, weekly, sportData, zones, total, period, before, records, has: acts.length > 0 || daily.length > 0 }
+    return { series, weekly, sportData, zones, total, period, before, records, hasDaily: daily.length > 0, has: acts.length > 0 || daily.length > 0 }
   }, [acts, daily, days])
 
   if (!data) return <Loading />
-  if (!data.has) return <Empty>Aún no hay datos para analizar. Pulsa <b>Sincronizar</b> para traer los datos de tu pulsera desde Health Connect, o sube un archivo FIT / TCX / GPX.</Empty>
-  const { series, weekly, sportData, zones, total, period, before, records } = data
+  if (!data.has) return <Empty>Aún no hay datos para analizar. Termina una rutina en <b>Entrenar</b> (con tu reloj conectado por Bluetooth se guarda también el pulso) y la analítica se irá sumando aquí.</Empty>
+  const { series, weekly, sportData, zones, total, period, before, records, hasDaily } = data
   const hasSteps = series.some((s) => s.steps), hasHr = series.some((s) => s.avg_hr || s.resting_hr), hasSleep = series.some((s) => s.sleep_h)
   const hasZones = Object.values(zones).some((v) => v > 0)
   const tick = Math.max(0, Math.ceil(series.length / 8) - 1)
@@ -113,7 +113,7 @@ export default function HealthAnalytics({ member }) {
         <div className="grid g4 mt">
           <Stat label="Actividades" value={total.n} icon={Activity} y />
           <Stat label="Distancia" value={`${total.km.toFixed(1)} km`} icon={Route} />
-          <Stat label="Pasos" value={fmtK(total.steps)} icon={Footprints} />
+          {hasDaily && <Stat label="Pasos" value={fmtK(total.steps)} icon={Footprints} />}
           <Stat label="Calorías (actividades)" value={fmtK(total.kcal)} sub={fmtTime(total.sec)} icon={Flame} />
         </div>
       </div>
@@ -123,11 +123,11 @@ export default function HealthAnalytics({ member }) {
       </div>
 
       <div className="grid g4">
-        <div className="card"><div className="tiny muted"><Footprints size={13} /> Pasos / día</div><div className="display" style={{ fontSize: '2rem' }}>{fmtK(period.stepsAvg)}</div><Delta now={period.steps} prev={before.steps} /></div>
+        {hasDaily && <div className="card"><div className="tiny muted"><Footprints size={13} /> Pasos / día</div><div className="display" style={{ fontSize: '2rem' }}>{fmtK(period.stepsAvg)}</div><Delta now={period.steps} prev={before.steps} /></div>}
         <div className="card"><div className="tiny muted"><Timer size={13} /> Ejercicio</div><div className="display" style={{ fontSize: '2rem' }}>{Math.round(period.min)} min</div><Delta now={period.min} prev={before.min} /></div>
         <div className="card"><div className="tiny muted"><Flame size={13} /> Calorías</div><div className="display" style={{ fontSize: '2rem' }}>{fmtK(period.kcal)}</div><Delta now={period.kcal} prev={before.kcal} /></div>
-        <div className="card"><div className="tiny muted"><HeartPulse size={13} /> Pulso en reposo</div><div className="display" style={{ fontSize: '2rem' }}>{period.restHr ? Math.round(period.restHr) : '—'}<span className="small muted"> lpm</span></div>
-          {period.restHr && before.restHr ? <span className="tiny" style={{ color: period.restHr <= before.restHr ? 'var(--ok)' : 'var(--bad)' }}>{period.restHr <= before.restHr ? 'Mejor' : 'Más alto'} que el periodo anterior ({Math.round(before.restHr)})</span> : <span className="tiny muted">sin comparación</span>}</div>
+        {hasDaily && <div className="card"><div className="tiny muted"><HeartPulse size={13} /> Pulso en reposo</div><div className="display" style={{ fontSize: '2rem' }}>{period.restHr ? Math.round(period.restHr) : '—'}<span className="small muted"> lpm</span></div>
+          {period.restHr && before.restHr ? <span className="tiny" style={{ color: period.restHr <= before.restHr ? 'var(--ok)' : 'var(--bad)' }}>{period.restHr <= before.restHr ? 'Mejor' : 'Más alto'} que el periodo anterior ({Math.round(before.restHr)})</span> : <span className="tiny muted">sin comparación</span>}</div>}
       </div>
 
       {hasSteps && (

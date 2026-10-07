@@ -6,7 +6,7 @@ import { getMemberPosts, followCounts, getFollowing, setFollow, driveImg } from 
 import { myRank } from '../../lib/ranking'
 import { Avatar, Empty, Loading, Modal, useToast } from '../../components/ui'
 import { PostCard, NewPost } from '../../components/Post'
-import Activities, { HealthSyncCard } from '../../components/Activities'
+import Activities from '../../components/Activities'
 import HealthAnalytics from '../../components/HealthAnalytics'
 
 /** Perfil estilo Instagram: cabecera con contadores, seguir, cuadrícula de fotos y actividades. */
@@ -81,8 +81,6 @@ export default function SocialProfile({ me, memberId, onBack, onOpenProfile, onC
           </>}
       </div>
 
-      {own && <HealthSyncCard member={m} onSynced={() => { loadRank(m); setHv((x) => x + 1); setTab('health') }} />}
-
       <div className="ig-tabs">
         <button className={tab === 'photos' ? 'on' : ''} onClick={() => setTab('photos')} aria-label="Fotos"><Grid3x3 size={20} /></button>
         <button className={tab === 'acts' ? 'on' : ''} onClick={() => setTab('acts')} aria-label="Actividades"><Watch size={20} /></button>
@@ -96,7 +94,7 @@ export default function SocialProfile({ me, memberId, onBack, onOpenProfile, onC
             <img src={driveImg(p.thumb_id || p.drive_id, 320)} alt="" loading="lazy" referrerPolicy="no-referrer" />
           </button>
         ))}</div>)}
-      {tab === 'acts' && <div className="mt"><Activities key={hv} member={m} own={own} onChanged={() => { loadRank(m); setHv((x) => x + 1) }} /></div>}
+      {tab === 'acts' && <div className="mt"><Activities key={hv} member={m} /></div>}
       {tab === 'health' && own && <div className="mt"><HealthAnalytics key={hv} member={m} /></div>}
 
       {open && <Modal title="Publicación" onClose={() => setOpen(null)}>
