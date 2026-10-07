@@ -5,10 +5,13 @@ import { Capacitor } from '@capacitor/core'
 import { analyzeHr, compactSeries } from './hr'
 import { normalizeSport } from './activityFiles'
 
-const READ = ['workouts', 'heartRate', 'steps', 'distance', 'calories', 'totalCalories']
-const CONSENT_KEY = 'iy-health-consent'
+const READ = ['workouts', 'heartRate', 'restingHeartRate', 'steps', 'distance', 'calories', 'totalCalories', 'sleep']
+// v2: se amplió la lista de permisos (pulso en reposo y sueño); quien ya había aceptado debe volver a autorizar
+const CONSENT_KEY = 'iy-health-consent-v2'
 
 export const healthSupported = () => Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android'
+
+const HISTORY_DAYS = 90 // primera sincronización: hasta 90 días de historial
 
 const plugin = async () => (await import('@capgo/capacitor-health')).Health
 
@@ -39,7 +42,7 @@ const sum = (samples) => samples.reduce((a, s) => a + (Number(s.value) || 0), 0)
  */
 export async function readHealthWorkouts(since, profile) {
   const H = await plugin()
-  const startDate = (since ? new Date(since) : new Date(Date.now() - 30 * 86400000)).toISOString()
+  const startDate = (since ? new Date(since) : new Date(Date.now() - HISTORY_DAYS * 86400000)).toISOString()
   const endDate = new Date().toISOString()
   const { workouts = [] } = await H.queryWorkouts({ startDate, endDate, limit: 200, ascending: true })
   const out = []
@@ -73,4 +76,43 @@ export async function readHealthWorkouts(since, profile) {
     })
   }
   return out
+}
+
+// ---------- Resumen por día (historial) ----------
+const dayKey = (iso) => { const d = new Date(iso); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
+
+async function aggregate(H, dataType, aggregation, range) {
+  try { return (await H.queryAggregated({ dataType, bucket: 'day', aggregation, ...range })).samples || [] } catch { return [] }
+}
+
+/**
+ * Resumen diario desde `sinceDay` (por defecto 90 días): pasos, distancia, calorías, pulso (medio, máx, mín, reposo) y sueño.
+ * No guarda nada: devuelve filas para saveHealthDaily().
+ */
+export async function readHealthDaily(sinceDay) {
+  const H = await plugin()
+  const from = sinceDay ? new Date(sinceDay) : new Date(Date.now() - HISTORY_DAYS * 86400000)
+  from.setHours(0, 0, 0, 0)
+  const range = { startDate: from.toISOString(), endDate: new Date().toISOString() }
+  const [steps, dist, kcal, kcalActive, hr, rest, sleep] = await Promise.all([
+    aggregate(H, 'steps', 'sum', range),
+    aggregate(H, 'distance', 'sum', range),
+    aggregate(H, 'totalCalories', 'sum', range),
+    aggregate(H, 'calories', 'sum', range),
+    aggregate(H, 'heartRate', ['average', 'max', 'min'], range),
+    aggregate(H, 'restingHeartRate', 'average', range),
+    aggregate(H, 'sleep', 'sum', range)
+  ])
+  const days = new Map()
+  const row = (iso) => { const k = dayKey(iso); if (!days.has(k)) days.set(k, { day: k }); return days.get(k) }
+  steps.forEach((s) => { row(s.startDate).steps = Math.round(s.value || 0) })
+  dist.forEach((s) => { row(s.startDate).distance_m = Math.round(s.value || 0) })
+  kcalActive.forEach((s) => { row(s.startDate).calories = Math.round(s.value || 0) })
+  kcal.forEach((s) => { const r = row(s.startDate); if ((s.value || 0) > (r.calories || 0)) r.calories = Math.round(s.value) })
+  hr.forEach((s) => { const r = row(s.startDate); r.avg_hr = s.values?.average ? Math.round(s.values.average) : null; r.max_hr = s.values?.max ? Math.round(s.values.max) : null; r.min_hr = s.values?.min ? Math.round(s.values.min) : null })
+  rest.forEach((s) => { row(s.startDate).resting_hr = s.value ? Math.round(s.value) : null })
+  // sueño: algunos orígenes devuelven minutos y otros segundos
+  sleep.forEach((s) => { const v = s.value || 0; row(s.startDate).sleep_min = Math.round(s.unit === 'minute' ? v : v > 1440 ? v / 60 : v) })
+  // Se descartan días completamente vacíos
+  return [...days.values()].filter((d) => d.steps || d.distance_m || d.calories || d.avg_hr || d.sleep_min)
 }

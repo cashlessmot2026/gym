@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft, Grid3x3, Watch, Pencil, Swords, Trophy, PlusSquare } from 'lucide-react'
+import { ArrowLeft, Grid3x3, Watch, Pencil, Swords, Trophy, PlusSquare, BarChart3 } from 'lucide-react'
 import { supabase, q } from '../../lib/supabase'
 import { GOALS } from '../../lib/constants'
 import { getMemberPosts, followCounts, getFollowing, setFollow, driveImg } from '../../lib/social'
 import { myRank } from '../../lib/ranking'
 import { Avatar, Empty, Loading, Modal, useToast } from '../../components/ui'
 import { PostCard, NewPost } from '../../components/Post'
-import Activities from '../../components/Activities'
+import Activities, { HealthSyncCard } from '../../components/Activities'
+import HealthAnalytics from '../../components/HealthAnalytics'
 
 /** Perfil estilo Instagram: cabecera con contadores, seguir, cuadrícula de fotos y actividades. */
 export default function SocialProfile({ me, memberId, onBack, onOpenProfile, onChallenge, bell }) {
@@ -21,11 +22,12 @@ export default function SocialProfile({ me, memberId, onBack, onOpenProfile, onC
   const [open, setOpen] = useState(null)
   const [edit, setEdit] = useState(null)
   const [composer, setComposer] = useState(false)
+  const [hv, setHv] = useState(0) // se incrementa tras sincronizar para recargar la analítica
 
   const loadRank = (mm) => myRank(mm).then(setRank).catch(() => {})
   useEffect(() => {
     setM(null); setPosts(null); setTab('photos')
-    q(supabase.from('members').select('id, full_name, photo, goal, level, bio, birthdate, sex, active').eq('id', memberId))
+    q(supabase.from('members').select('id, full_name, photo, goal, level, bio, birthdate, sex, active, health_last_sync').eq('id', memberId))
       .then(([x]) => { setM(x); if (x) loadRank(x) }).catch((e) => toast(e.message, 'error'))
     getMemberPosts(memberId, me.id).then(setPosts).catch(() => setPosts([]))
     followCounts(memberId).then(setCounts)
@@ -79,9 +81,12 @@ export default function SocialProfile({ me, memberId, onBack, onOpenProfile, onC
           </>}
       </div>
 
+      {own && <HealthSyncCard member={m} onSynced={() => { loadRank(m); setHv((x) => x + 1); setTab('health') }} />}
+
       <div className="ig-tabs">
         <button className={tab === 'photos' ? 'on' : ''} onClick={() => setTab('photos')} aria-label="Fotos"><Grid3x3 size={20} /></button>
         <button className={tab === 'acts' ? 'on' : ''} onClick={() => setTab('acts')} aria-label="Actividades"><Watch size={20} /></button>
+        {own && <button className={tab === 'health' ? 'on' : ''} onClick={() => setTab('health')} aria-label="Analítica de salud"><BarChart3 size={20} /></button>}
       </div>
 
       {tab === 'photos' && (posts === null ? <Loading /> : !posts.length
@@ -91,7 +96,8 @@ export default function SocialProfile({ me, memberId, onBack, onOpenProfile, onC
             <img src={driveImg(p.thumb_id || p.drive_id, 320)} alt="" loading="lazy" referrerPolicy="no-referrer" />
           </button>
         ))}</div>)}
-      {tab === 'acts' && <div className="mt"><Activities member={m} own={own} onChanged={() => loadRank(m)} /></div>}
+      {tab === 'acts' && <div className="mt"><Activities key={hv} member={m} own={own} onChanged={() => { loadRank(m); setHv((x) => x + 1) }} /></div>}
+      {tab === 'health' && own && <div className="mt"><HealthAnalytics key={hv} member={m} /></div>}
 
       {open && <Modal title="Publicación" onClose={() => setOpen(null)}>
         <PostCard post={open} me={me} onChange={updatePost} onOpenProfile={(id) => { setOpen(null); if (id !== memberId) onOpenProfile(id) }}

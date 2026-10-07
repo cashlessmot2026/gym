@@ -3,7 +3,7 @@
 import { supabase, q } from './supabase'
 import { refreshScore } from './ranking'
 import { refreshChallenges } from './challenges'
-import { healthConsented, healthSupported, readHealthWorkouts } from './health'
+import { healthConsented, healthSupported, readHealthWorkouts, readHealthDaily } from './health'
 import { hrProfile } from './hr'
 
 /** Inserta las actividades nuevas (las repetidas se ignoran). Devuelve cuántas eran nuevas. */
@@ -41,8 +41,23 @@ export async function syncHealth(member) {
   const since = member.health_last_sync ? new Date(new Date(member.health_last_sync).getTime() - 3600000) : null
   const list = await readHealthWorkouts(since, profile)
   const n = await saveActivities(member, list)
+  // Historial por día: se reescriben los últimos 3 días (los datos de hoy cambian durante el día)
+  try { await saveHealthDaily(member, await readHealthDaily(since ? new Date(since.getTime() - 2 * 86400000) : null)) } catch (e) { console.warn('[health-daily]', e) }
   await supabase.from('members').update({ health_last_sync: new Date().toISOString() }).eq('id', member.id)
   return n
+}
+
+/** Guarda (o actualiza) el resumen diario. Un día = una fila. */
+export async function saveHealthDaily(member, rows) {
+  if (!rows.length) return 0
+  const now = new Date().toISOString()
+  await q(supabase.from('health_daily').upsert(rows.map((r) => ({ ...r, member_id: member.id, updated_at: now })), { onConflict: 'member_id,day' }))
+  return rows.length
+}
+
+export const listHealthDaily = (memberId, days = 120) => {
+  const from = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10)
+  return q(supabase.from('health_daily').select('*').eq('member_id', memberId).gte('day', from).order('day'))
 }
 
 export const listActivities = (memberId, limit = 60) =>

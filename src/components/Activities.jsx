@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts'
 import { Upload, RefreshCw, HeartPulse, Flame, Route, Timer, Footprints, Watch, Settings2 } from 'lucide-react'
+import { supabase } from '../lib/supabase'
 import { fmtTime, fmtDateTime } from '../lib/constants'
 import { ACCEPT, parseActivityFile, SPORT_ICON } from '../lib/activityFiles'
 import { listActivities, saveActivities, syncHealth, latestWeight } from '../lib/activities'
@@ -145,5 +146,50 @@ function ActivityDetail({ a, onClose }) {
       )}
       <ZoneBar zones={a.hr_zones} />
     </Modal>
+  )
+}
+
+/** Tarjeta visible en el perfil: sincroniza Health Connect (pulseras y apps de fitness) y guarda el historial. */
+export function HealthSyncCard({ member, onSynced }) {
+  const toast = useToast()
+  const [busy, setBusy] = useState(false)
+  const [last, setLast] = useState(member.health_last_sync)
+  const native = healthSupported()
+
+  const run = async (full) => {
+    setBusy(true)
+    try {
+      if (!healthConsented()) await connectHealth()
+      let m = member
+      if (full) { await supabase.from('members').update({ health_last_sync: null }).eq('id', member.id); m = { ...member, health_last_sync: null } }
+      const n = await syncHealth(m)
+      setLast(new Date().toISOString())
+      toast(n ? `✅ ${n} actividad${n > 1 ? 'es' : ''} nueva${n > 1 ? 's' : ''} · historial actualizado` : 'Historial actualizado (sin actividades nuevas)', 'success')
+      onSynced?.()
+    } catch (e) { toast(e.message, 'error') } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="card mt" style={{ borderColor: 'var(--y)' }}>
+      <div className="row between wrap" style={{ gap: 10 }}>
+        <div className="grow" style={{ minWidth: 200 }}>
+          <h3 style={{ margin: 0 }}><HeartPulse size={18} className="y" /> Salud y pulsera</h3>
+          <div className="tiny muted">
+            {native
+              ? (last ? `Última sincronización: ${fmtDateTime(last)}` : 'Aún no has sincronizado. Conecta Health Connect para traer tus datos de Mi Fitness, Zepp, Garmin, Samsung Health o Google Fit.')
+              : 'La sincronización con Health Connect está en la app Android (APK). Aquí puedes subir archivos FIT, TCX o GPX desde la pestaña ⌚.'}
+          </div>
+        </div>
+        {native && (
+          <div className="row wrap" style={{ gap: 6 }}>
+            <button className="btn primary" disabled={busy} onClick={() => run(false)}>{busy ? <Spinner size={16} /> : <RefreshCw size={16} />} {healthConsented() ? 'Sincronizar ahora' : 'Conectar Health Connect'}</button>
+            {healthConsented() && <>
+              <button className="btn sm" disabled={busy} onClick={() => run(true)} title="Vuelve a leer los últimos 90 días">Reimportar 90 días</button>
+              <button className="btn sm ghost" onClick={openHealthSettings} title="Permisos de Health Connect"><Settings2 size={16} /></button>
+            </>}
+          </div>
+        )}
+      </div>
+    </div>
   )
 }

@@ -127,3 +127,21 @@ export function assignNfcTag(code, ms = 15000) {
     } catch (err) { clearTimeout(timer); reject(err) }
   })
 }
+
+/** Estado del NFC para mostrarlo en pantalla: { kind: 'web'|'native'|'none', supported, enabled, detail } */
+export async function nfcStatus() {
+  if (isNative()) {
+    try {
+      const { CapacitorNfc } = await import('@capgo/capacitor-nfc')
+      const { supported } = await CapacitorNfc.isSupported()
+      if (!supported) return { kind: 'native', supported: false, enabled: false, detail: 'Este teléfono no tiene NFC' }
+      const { status } = await CapacitorNfc.getStatus()
+      return { kind: 'native', supported: true, enabled: status === 'NFC_OK', detail: status === 'NFC_OK' ? 'NFC encendido' : status === 'NFC_DISABLED' ? 'NFC apagado: actívalo en los ajustes del teléfono' : status }
+    } catch (e) {
+      return { kind: 'native', supported: false, enabled: false, detail: 'No se pudo cargar el lector nativo: ' + (e?.message || e) }
+    }
+  }
+  return 'NDEFReader' in window
+    ? { kind: 'web', supported: true, enabled: true, detail: 'Web NFC disponible' }
+    : { kind: 'none', supported: false, enabled: false, detail: 'Este navegador no soporta Web NFC' }
+}

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { IdCard, QrCode, Nfc, ScanFace, CheckCircle2, XCircle, Delete, Power, Usb, Maximize, Minimize, Clock } from 'lucide-react'
 import { supabase, q } from '../../lib/supabase'
-import { startNfcScan, nfcSupported } from '../../lib/nfc'
+import { startNfcScan, nfcSupported, nfcStatus } from '../../lib/nfc'
 import { loadFace, detectFace, bestMatch, drawBox, preloadFace } from '../../lib/face'
 import { Brand, Avatar, StatusBadge, Spinner, Empty } from '../../components/ui'
 import { QRScanner, useCamera, useFacing, CameraSwitch } from '../../components/Media'
@@ -83,7 +83,7 @@ export default function CheckApp() {
         query = query.or([`nfc_uid.eq.${uid}`, `nfc_uid.eq.${uid.toUpperCase()}`, `nfc_uid.eq.${uid.toLowerCase()}`, ...codes].join(','))
       }
       const [m] = await q(query.limit(1))
-      if (!m) { sound(false); setResult({ ok: false, title: 'No registrado', msg: 'No se encontró ningún cliente con ese dato.' }); return }
+      if (!m) { sound(false); setResult({ ok: false, title: 'No registrado', msg: by.nfc ? `Tag leído (${by.nfc}) pero no está asignado a ningún cliente. Asígnalo desde la ficha del cliente.` : 'No se encontró ningún cliente con ese dato.' }); return }
       const allowed = m.active && (m.status === 'activa' || m.status === 'por_vencer')
       const [last] = await q(supabase.from('attendance').select('created_at').eq('member_id', m.member_id).order('created_at', { ascending: false }).limit(1))
       if (!last || Date.now() - new Date(last.created_at).getTime() > 60000) {
@@ -204,7 +204,10 @@ function NfcReader({ onRead }) {
   const [left, setLeft] = useState(0)
   const [err, setErr] = useState('')
   const [usb, setUsb] = useState('')
+  const [st, setSt] = useState(null)       // estado del NFC del dispositivo
+  const [lastUid, setLastUid] = useState('')
   const stopRef = useRef(null)
+  useEffect(() => { nfcStatus().then(setSt) }, [])
 
   const stop = () => { stopRef.current?.(); stopRef.current = null; setOn(false); setLeft(0) }
   const start = async () => {
@@ -212,7 +215,7 @@ function NfcReader({ onRead }) {
     try {
       stopRef.current = await startNfcScan({
         ms: 5000,
-        onRead: (r) => { onRead(r); stop() },
+        onRead: (r) => { setLastUid(r.serial || '(sin UID)'); onRead(r); stop() },
         onError: setErr,
         onEnd: () => { setOn(false); setLeft(0) }
       })
@@ -236,6 +239,8 @@ function NfcReader({ onRead }) {
       </button>
       {!nfcSupported() && <p className="tiny warn mt">{isIOS() ? 'iPhone y iPad no permiten leer NFC desde el navegador: usa cédula, QR o facial, o un lector NFC USB/Bluetooth.' : 'Web NFC requiere Chrome en Android. Alternativa: lector NFC USB abajo.'}</p>}
       {err && <div className="badge bad mt">{err}</div>}
+      {st && <p className="tiny mt" style={{ color: st.supported && st.enabled ? 'var(--ok)' : 'var(--bad)' }}>{st.kind === 'native' ? '📱 Lector nativo · ' : ''}{st.detail}</p>}
+      {lastUid && <p className="tiny muted">Último tag leído: <b>{lastUid}</b></p>}
       <div className="mt2" style={{ textAlign: 'left' }}>
         <label className="tiny muted" style={{ fontWeight: 700 }}><Usb size={12} /> LECTOR USB (modo teclado): haz clic y pasa el tag</label>
         <input className="input mt" value={usb} placeholder="UID del tag" onChange={(e) => setUsb(e.target.value)}
