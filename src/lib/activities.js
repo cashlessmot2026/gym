@@ -34,15 +34,23 @@ export async function latestWeight(memberId) {
  * Sincroniza Health Connect desde la última vez (o 30 días). Se llama sola al
  * abrir la app si el cliente ya dio permiso. Devuelve cuántas actividades nuevas.
  */
+/** Detalle de la última sincronización (para mostrar al usuario qué se leyó). */
+export const syncInfo = { workouts: 0, days: 0, steps: 0 }
+
 export async function syncHealth(member) {
   if (!healthSupported() || !healthConsented()) return 0
   const profile = hrProfile(member, await latestWeight(member.id))
   // 1 h de margen por entrenamientos que la pulsera sube con retraso
   const since = member.health_last_sync ? new Date(new Date(member.health_last_sync).getTime() - 3600000) : null
   const list = await readHealthWorkouts(since, profile)
+  syncInfo.workouts = list.length; syncInfo.days = 0; syncInfo.steps = 0
   const n = await saveActivities(member, list)
   // Historial por día: se reescriben los últimos 3 días (los datos de hoy cambian durante el día)
-  try { await saveHealthDaily(member, await readHealthDaily(since ? new Date(since.getTime() - 2 * 86400000) : null)) } catch (e) { console.warn('[health-daily]', e) }
+  try {
+    const daily = await readHealthDaily(since ? new Date(since.getTime() - 2 * 86400000) : null)
+    syncInfo.days = daily.length; syncInfo.steps = daily.reduce((t, d) => t + (d.steps || 0), 0)
+    await saveHealthDaily(member, daily)
+  } catch (e) { console.warn('[health-daily]', e) }
   await supabase.from('members').update({ health_last_sync: new Date().toISOString() }).eq('id', member.id)
   return n
 }

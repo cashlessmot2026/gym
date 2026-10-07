@@ -32,26 +32,38 @@ function decodeNative(ndef = []) {
   return out
 }
 
-async function nativeNfc() {
-  const { CapacitorNfc } = await import('@capgo/capacitor-nfc')
-  const { supported } = await CapacitorNfc.isSupported()
+/** Evita que un paso nativo se quede colgado sin avisar. */
+const withTimeout = (p, ms, what) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(`${what}: el teléfono no respondió en ${ms / 1000} s`)), ms))])
+
+async function nativeNfc(log = () => {}) {
+  log('Cargando lector nativo…')
+  const { CapacitorNfc } = await withTimeout(import('@capgo/capacitor-nfc'), 6000, 'Cargar el plugin NFC')
+  log('Plugin cargado ✓')
+  const { supported } = await withTimeout(CapacitorNfc.isSupported(), 4000, 'Comprobar NFC')
   if (!supported) throw new Error('Este teléfono no tiene NFC')
-  const { status } = await CapacitorNfc.getStatus()
-  if (status === 'NFC_DISABLED') {
-    await CapacitorNfc.showSettings?.().catch(() => {})
-    throw new Error('El NFC está apagado. Actívalo en los ajustes del teléfono y vuelve a intentarlo.')
-  }
+  const { status } = await withTimeout(CapacitorNfc.getStatus(), 4000, 'Leer el estado del NFC')
+  log(`Estado NFC: ${status}`)
+  if (status === 'NFC_DISABLED') throw new Error('El NFC está apagado. Actívalo en los ajustes del teléfono.')
   return CapacitorNfc
 }
 
-async function startNative({ onRead, ms, onEnd }) {
-  const Nfc = await nativeNfc()
+/** Abre los ajustes de NFC del teléfono (APK). */
+export async function openNfcSettings() {
+  if (!isNative()) return
+  const { CapacitorNfc } = await import('@capgo/capacitor-nfc')
+  await CapacitorNfc.showSettings()
+}
+
+async function startNative({ onRead, ms, onEnd, log = () => {} }) {
+  const Nfc = await nativeNfc(log)
   let stopped = false
-  const handle = await Nfc.addListener('nfcEvent', (e) => {
+  const handle = await withTimeout(Nfc.addListener('nfcEvent', (e) => {
     if (stopped) return
+    log('Tag detectado')
     onRead?.({ serial: hexUid(e.tag?.id), texts: decodeNative(e.tag?.ndefMessage) })
-  })
-  await Nfc.startScanning({ invalidateAfterFirstRead: false, alertMessage: 'Acerca el tag al teléfono' })
+  }), 4000, 'Escuchar tags')
+  await withTimeout(Nfc.startScanning({ invalidateAfterFirstRead: false, alertMessage: 'Acerca el tag al teléfono' }), 4000, 'Encender el lector')
+  log('Lector encendido ✓ acerca un tag')
   const stop = () => {
     if (stopped) return
     stopped = true; clearTimeout(timer)
@@ -65,9 +77,9 @@ async function startNative({ onRead, ms, onEnd }) {
  * Lee tags durante `ms` milisegundos. Llama onRead({serial, texts}).
  * Devuelve una función para detener la lectura.
  */
-export async function startNfcScan({ onRead, onError, ms = 5000, onEnd }) {
+export async function startNfcScan({ onRead, onError, ms = 5000, onEnd, log }) {
   if (!nfcSupported()) throw new Error('Este dispositivo/navegador no soporta Web NFC (usa Chrome en Android)')
-  if (isNative()) return startNative({ onRead, ms, onEnd })
+  if (isNative()) return startNative({ onRead, ms, onEnd, log })
   const ctrl = new AbortController()
   const reader = new window.NDEFReader()
   await reader.scan({ signal: ctrl.signal })

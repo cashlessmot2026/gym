@@ -4,7 +4,7 @@ import { Upload, RefreshCw, HeartPulse, Flame, Route, Timer, Footprints, Watch, 
 import { supabase } from '../lib/supabase'
 import { fmtTime, fmtDateTime } from '../lib/constants'
 import { ACCEPT, parseActivityFile, SPORT_ICON } from '../lib/activityFiles'
-import { listActivities, saveActivities, syncHealth, latestWeight } from '../lib/activities'
+import { listActivities, saveActivities, syncHealth, latestWeight, syncInfo } from '../lib/activities'
 import { connectHealth, healthSupported, healthConsented, openHealthSettings } from '../lib/health'
 import { ZONES, hrProfile } from '../lib/hr'
 import { Empty, Loading, Modal, Stat, Spinner, useToast } from './ui'
@@ -164,7 +164,10 @@ export function HealthSyncCard({ member, onSynced }) {
       if (full) { await supabase.from('members').update({ health_last_sync: null }).eq('id', member.id); m = { ...member, health_last_sync: null } }
       const n = await syncHealth(m)
       setLast(new Date().toISOString())
-      toast(n ? `✅ ${n} actividad${n > 1 ? 'es' : ''} nueva${n > 1 ? 's' : ''} · historial actualizado` : 'Historial actualizado (sin actividades nuevas)', 'success')
+      const empty = !syncInfo.workouts && !syncInfo.days
+      toast(empty
+        ? 'Health Connect no tiene datos de tu pulsera. Abre Mi Fitness → Perfil → Ajustes → Health Connect y activa pasos, ejercicio, pulso y sueño; luego sincroniza la pulsera y vuelve aquí.'
+        : `✅ ${n} actividad${n === 1 ? '' : 'es'} nueva${n === 1 ? '' : 's'} · ${syncInfo.workouts} entrenamientos leídos · ${syncInfo.days} días en el historial${syncInfo.steps ? ` · ${syncInfo.steps.toLocaleString('es')} pasos` : ''}`, empty ? 'error' : 'success')
       onSynced?.()
     } catch (e) { toast(e.message, 'error') } finally { setBusy(false) }
   }
@@ -190,6 +193,18 @@ export function HealthSyncCard({ member, onSynced }) {
           </div>
         )}
       </div>
+      {native && (
+        <details className="mt">
+          <summary className="small" style={{ cursor: 'pointer', fontWeight: 700 }}>¿Usas Mi Fitness (Xiaomi)? Cómo conectarlo</summary>
+          <ol className="small muted" style={{ margin: '8px 0 0', paddingLeft: 18, lineHeight: 1.6 }}>
+            <li>Instala o actualiza <b>Health Connect</b> (Android 14+ ya lo trae en Ajustes).</li>
+            <li>En <b>Mi Fitness</b>: Perfil → Ajustes → <b>Health Connect</b>, y activa pasos, ejercicio, pulso, calorías y sueño.</li>
+            <li>Sincroniza tu pulsera con Mi Fitness (desliza hacia abajo en la pantalla principal).</li>
+            <li>Vuelve aquí y pulsa <b>Sincronizar ahora</b>. Acepta todos los permisos.</li>
+          </ol>
+          <p className="tiny muted mb0">Mi Fitness no permite a otras apps leer sus datos directamente: Health Connect es el puente oficial.</p>
+        </details>
+      )}
     </div>
   )
 }

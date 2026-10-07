@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { IdCard, QrCode, Nfc, ScanFace, CheckCircle2, XCircle, Delete, Power, Usb, Maximize, Minimize, Clock } from 'lucide-react'
 import { supabase, q } from '../../lib/supabase'
-import { startNfcScan, nfcSupported, nfcStatus } from '../../lib/nfc'
+import { startNfcScan, nfcSupported, nfcStatus, openNfcSettings } from '../../lib/nfc'
 import { loadFace, detectFace, bestMatch, drawBox, preloadFace } from '../../lib/face'
 import { Brand, Avatar, StatusBadge, Spinner, Empty } from '../../components/ui'
 import { QRScanner, useCamera, useFacing, CameraSwitch } from '../../components/Media'
@@ -206,22 +206,28 @@ function NfcReader({ onRead }) {
   const [usb, setUsb] = useState('')
   const [st, setSt] = useState(null)       // estado del NFC del dispositivo
   const [lastUid, setLastUid] = useState('')
+  const [logs, setLogs] = useState([])
   const stopRef = useRef(null)
+  const native = !!window.Capacitor?.isNativePlatform?.()
+  const log = (m) => setLogs((l) => [...l.slice(-5), `${new Date().toLocaleTimeString('es')}  ${m}`])
   useEffect(() => { nfcStatus().then(setSt) }, [])
 
   const stop = () => { stopRef.current?.(); stopRef.current = null; setOn(false); setLeft(0) }
+  // En el APK el lector es continuo (queda encendido mientras estés en este modo); en el navegador dura 5 s
   const start = async () => {
-    setErr('')
+    setErr(''); setOn(true); log('Encendiendo el lector…')
     try {
       stopRef.current = await startNfcScan({
-        ms: 5000,
-        onRead: (r) => { setLastUid(r.serial || '(sin UID)'); onRead(r); stop() },
+        ms: native ? 0 : 5000, log,
+        onRead: (r) => { setLastUid(r.serial || '(sin UID)'); onRead(r); if (!native) stop() },
         onError: setErr,
         onEnd: () => { setOn(false); setLeft(0) }
       })
-      setOn(true); setLeft(5)
-    } catch (e) { setErr(e.message) }
+      setLeft(native ? 0 : 5)
+    } catch (e) { setOn(false); setErr(e.message); log('Error: ' + e.message) }
   }
+  // APK: al elegir "Tag NFC" el lector se enciende solo
+  useEffect(() => { if (native) start() }, [])
   useEffect(() => {
     if (!on) return
     const t = setInterval(() => setLeft((x) => Math.max(0, x - 1)), 1000)
@@ -233,14 +239,16 @@ function NfcReader({ onRead }) {
     <div className="card center reader-card">
       <h3>Lectura de tag NFC</h3>
       <div className={`nfc-pulse ${on ? 'on' : ''}`}><Nfc size={54} /></div>
-      <p className="display" style={{ fontSize: '1.8rem', margin: '14px 0 6px' }}>{on ? `LEYENDO… ${left}s` : 'LECTOR APAGADO'}</p>
+      <p className="display" style={{ fontSize: '1.8rem', margin: '14px 0 6px' }}>{on ? (native ? 'LEYENDO… ACERCA EL TAG' : `LEYENDO… ${left}s`) : 'LECTOR APAGADO'}</p>
       <button className={`btn lg ${on ? 'danger' : 'primary'}`} onClick={on ? stop : start} disabled={!nfcSupported()}>
-        <Power size={20} /> {on ? 'Apagar' : 'Encender (5 s)'}
+        <Power size={20} /> {on ? 'Apagar' : native ? 'Encender lector' : 'Encender (5 s)'}
       </button>
       {!nfcSupported() && <p className="tiny warn mt">{isIOS() ? 'iPhone y iPad no permiten leer NFC desde el navegador: usa cédula, QR o facial, o un lector NFC USB/Bluetooth.' : 'Web NFC requiere Chrome en Android. Alternativa: lector NFC USB abajo.'}</p>}
       {err && <div className="badge bad mt">{err}</div>}
+      {native && /apagado/i.test(err) && <button className="btn sm mt" onClick={() => openNfcSettings().catch((e) => setErr(e.message))}>Abrir ajustes de NFC</button>}
       {st && <p className="tiny mt" style={{ color: st.supported && st.enabled ? 'var(--ok)' : 'var(--bad)' }}>{st.kind === 'native' ? '📱 Lector nativo · ' : ''}{st.detail}</p>}
       {lastUid && <p className="tiny muted">Último tag leído: <b>{lastUid}</b></p>}
+      {native && logs.length > 0 && <pre className="tiny muted" style={{ textAlign: 'left', whiteSpace: 'pre-wrap', margin: '8px 0 0' }}>{logs.map((l, i) => <div key={i}>{l}</div>)}</pre>}
       <div className="mt2" style={{ textAlign: 'left' }}>
         <label className="tiny muted" style={{ fontWeight: 700 }}><Usb size={12} /> LECTOR USB (modo teclado): haz clic y pasa el tag</label>
         <input className="input mt" value={usb} placeholder="UID del tag" onChange={(e) => setUsb(e.target.value)}
