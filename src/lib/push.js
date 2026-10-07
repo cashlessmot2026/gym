@@ -43,6 +43,35 @@ async function saveSubscription(row) {
   return q(supabase.from('push_subscriptions').upsert({ ...row, last_seen: new Date().toISOString(), user_agent: navigator.userAgent.slice(0, 250) }, { onConflict: 'endpoint' }))
 }
 
+// ---------- Firebase Cloud Messaging (APK Android) ----------
+const fcmWaiters = []
+let fcmListening = false
+
+/** Registra el teléfono en FCM y devuelve su token. Rechaza si FCM no está disponible. */
+async function registerFcm() {
+  const { PushNotifications } = await import('@capacitor/push-notifications')
+  if (!fcmListening) {
+    fcmListening = true
+    // El token puede cambiar con el tiempo: se vuelve a guardar solo
+    await PushNotifications.addListener('registration', (t) => {
+      localStorage.setItem('iy_fcm_token', t.value)
+      fcmWaiters.splice(0).forEach((w) => w.ok(t.value))
+      try {
+        const o = JSON.parse(localStorage.getItem('iy_push_owner') || '{}')
+        if (o.member_id || o.staff_id) saveSubscription({ ...o, platform: 'android', endpoint: t.value }).catch(() => {})
+      } catch { /* sin propietario */ }
+    })
+    await PushNotifications.addListener('registrationError', (e) => fcmWaiters.splice(0).forEach((w) => w.err(new Error(e?.error || 'Error al registrar en FCM'))))
+  }
+  const perm = await PushNotifications.requestPermissions()
+  if (perm.receive !== 'granted') throw new Error('Permiso de notificaciones denegado')
+  return new Promise((ok, err) => {
+    const timer = setTimeout(() => err(new Error('FCM no respondió (¿falta google-services.json o Google Play Services?)')), 15000)
+    fcmWaiters.push({ ok: (v) => { clearTimeout(timer); ok(v) }, err: (e) => { clearTimeout(timer); err(e) } })
+    PushNotifications.register().catch((e) => { clearTimeout(timer); err(e) })
+  })
+}
+
 async function swRegistration() {
   return Promise.race([
     navigator.serviceWorker.ready,
@@ -86,10 +115,21 @@ export async function enablePush(ownerOrMemberId) {
         await LocalNotifications.changeExactNotificationSetting()
       }
     } catch { /* versión sin alarmas exactas */ }
-    await saveSubscription({ ...owner, platform: 'android', endpoint: `local:${deviceId()}` })
     localStorage.setItem('iy_push_native', 'granted')
     localStorage.setItem('iy_push_owner', JSON.stringify(owner))
-    await configureBackground(owner)
+    // Push real por Firebase Cloud Messaging: llega aunque la app esté cerrada.
+    let token = null
+    try { token = await registerFcm() } catch (e) { console.warn('[fcm]', e?.message || e) }
+    if (token) {
+      await saveSubscription({ ...owner, platform: 'android', endpoint: token })
+      // Ya no hace falta la consulta periódica (evita avisos duplicados)
+      await supabase.from('push_subscriptions').delete().eq('endpoint', `local:${deviceId()}`)
+      await configureBackground({})
+    } else {
+      // Sin FCM (p. ej. sin Google Play Services): se conserva la consulta cada ~15 min como respaldo
+      await saveSubscription({ ...owner, platform: 'android', endpoint: `local:${deviceId()}` })
+      await configureBackground(owner)
+    }
     await scheduleClassAlerts(owner).catch(() => {})
     return true
   }
@@ -118,6 +158,12 @@ export async function disablePush() {
     const pending = await LocalNotifications.getPending().catch(() => ({ notifications: [] }))
     if (pending.notifications.length) await LocalNotifications.cancel({ notifications: pending.notifications.map((n) => ({ id: n.id })) }).catch(() => {})
     await supabase.from('push_subscriptions').delete().eq('endpoint', `local:${deviceId()}`)
+    const fcm = localStorage.getItem('iy_fcm_token')
+    if (fcm) {
+      await supabase.from('push_subscriptions').delete().eq('endpoint', fcm)
+      localStorage.removeItem('iy_fcm_token')
+      import('@capacitor/push-notifications').then(({ PushNotifications }) => PushNotifications.unregister()).catch(() => {})
+    }
     await configureBackground({})
     localStorage.setItem('iy_push_native', 'default')
     return
@@ -167,6 +213,12 @@ export function listenPushMessages({ onMessage, onOpen }) {
       const h = LocalNotifications.addListener('localNotificationActionPerformed', (a) => onOpen?.({ url: a.notification.extra?.url, id: a.notification.extra?.id }))
       offs.push(() => Promise.resolve(h).then((x) => x?.remove?.()))
     })
+    // Push de Firebase: con la app abierta muestra el aviso interno; al tocar la notificación abre su destino
+    import('@capacitor/push-notifications').then(({ PushNotifications }) => {
+      const a = PushNotifications.addListener('pushNotificationReceived', (n) => onMessage?.({ id: n.data?.id, title: n.title, body: n.body, url: n.data?.url, category: n.data?.category }))
+      const b = PushNotifications.addListener('pushNotificationActionPerformed', (e) => onOpen?.({ url: e.notification?.data?.url, id: e.notification?.data?.id }))
+      offs.push(() => { Promise.resolve(a).then((x) => x?.remove?.()); Promise.resolve(b).then((x) => x?.remove?.()) })
+    }).catch(() => {})
   }
   return () => offs.forEach((f) => f())
 }

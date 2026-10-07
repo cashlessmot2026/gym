@@ -1,0 +1,2 @@
+const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/web-D6dk4M-D.js","assets/dist-B-fBiTU6.js"])))=>i.map(i=>d[i]);
+import{C as e}from"./index-CW0itFHY.js";import{i as t}from"./dist-B-fBiTU6.js";var n;(function(e){e[e.Sunday=1]=`Sunday`,e[e.Monday=2]=`Monday`,e[e.Tuesday=3]=`Tuesday`,e[e.Wednesday=4]=`Wednesday`,e[e.Thursday=5]=`Thursday`,e[e.Friday=6]=`Friday`,e[e.Saturday=7]=`Saturday`})(n||={});var r=t(`LocalNotifications`,{web:()=>e(()=>import(`./web-D6dk4M-D.js`).then(e=>new e.LocalNotificationsWeb),__vite__mapDeps([0,1]))});export{r as LocalNotifications};
