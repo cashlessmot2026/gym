@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-12T11:11:33.116Z",
+  "updated": "2026-10-19T11:22:33.702Z",
   "source": "PubMed (NIH E-utilities)",
   "items": [
     {
@@ -57,6 +57,18 @@
       "url": "https://pubmed.ncbi.nlm.nih.gov/41433039/"
     },
     {
+      "title": "International Society of Sports Nutrition position stand: diets for body weight reduction",
+      "source": "Journal of the International Society of Sports Nutrition",
+      "date": "2026 Dec 30",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/42867412/"
+    },
+    {
+      "title": "Summary of the 2026 Professionals in Nutrition for Exercise and Sport \"10 Questions/10 Experts\" Session-Are Sports Nutrition Guidelines Too Elite Focused for Recreational Athletes?",
+      "source": "International journal of sport nutrition and exercise metabolism",
+      "date": "2026 Oct 15",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/42887879/"
+    },
+    {
       "title": "UCI Sports Nutrition Project: Position Statement on Nutrition for Cycling",
       "source": "International journal of sport nutrition and exercise metabolism",
       "date": "2026 Sep 15",
@@ -79,18 +91,6 @@
       "source": "The Physician and sportsmedicine",
       "date": "2026 Jun",
       "url": "https://pubmed.ncbi.nlm.nih.gov/41655197/"
-    },
-    {
-      "title": "Does a low-carbohydrate diet impede endurance sports performance? Debate Consensus",
-      "source": "The American journal of clinical nutrition",
-      "date": "2026 May",
-      "url": "https://pubmed.ncbi.nlm.nih.gov/42070893/"
-    },
-    {
-      "title": "From Metabolism to Medals: Contemporary Perspectives and Revisiting Carbohydrate Guidelines for Fueling Endurance Athletes during Exercise",
-      "source": "The Journal of nutrition",
-      "date": "2026 May",
-      "url": "https://pubmed.ncbi.nlm.nih.gov/41759826/"
     }
   ]
 }
