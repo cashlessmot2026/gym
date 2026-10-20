@@ -40,7 +40,7 @@ export default function CardPage() {
       {card === undefined ? <Loading /> : !card ? (
         <div className="card center col" style={{ alignItems: 'center' }}>
           <CalendarCheck size={40} className="y" />
-          <h2 style={{ margin: 0 }}>Esta tarjeta ya terminó</h2>
+          <h2 style={{ margin: 0 }}>{err ? 'No encontramos tu tarjeta' : 'Esta tarjeta ya terminó'}</h2>
           <p className="muted" style={{ margin: 0 }}>{err || 'Completaste tu plan. Pide una tarjeta nueva en recepción para seguir entrenando.'}</p>
         </div>
       ) : (

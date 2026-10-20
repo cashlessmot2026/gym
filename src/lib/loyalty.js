@@ -13,6 +13,8 @@ const isNative = () => !!window.Capacitor?.isNativePlatform?.()
 export const cardLink = (token) =>
   (isNative() ? PUBLIC_URL : location.origin + import.meta.env.BASE_URL) + 'tarjeta/' + token
 
+export const isToken = (t) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(t || ''))
+
 /** Lo que va dentro del QR de la tarjeta. */
 export const cardQr = (code) => 'IYF:' + code
 
@@ -55,6 +57,7 @@ export async function redeemGift(code, staffId) {
 
 /** Tarjeta pública del cliente por su token. Devuelve null si ya terminó o no existe. */
 export async function getCardByToken(token) {
+  if (!isToken(token)) throw new Error('Este link no es válido. Ábrelo desde el mensaje que te envió recepción.')
   const rows = await q(supabase.from('loyalty_cards')
     .select('id, token, code, full_name, plan_days, days_done, gift_days, created_at, visits:loyalty_visits(created_at, kind, note)')
     .eq('token', token).limit(1))
