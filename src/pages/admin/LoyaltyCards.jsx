@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, ScanLine, Trash2, Eye, Copy, MessageCircle, Gift, CalendarPlus, Search, Ticket } from 'lucide-react'
+import { Plus, ScanLine, Trash2, Eye, Copy, MessageCircle, Gift, Search, Ticket } from 'lucide-react'
 import { LOYALTY_PLANS, listCards, createCard, deleteCard, confirmDay, redeemGift, cardLink, parseCardCode, whatsappLink } from '../../lib/loyalty'
 import { fmtDateTime, money } from '../../lib/constants'
 import LoyaltyCard from '../../components/LoyaltyCard'
@@ -15,6 +15,7 @@ export default function LoyaltyCards({ me }) {
   const [view, setView] = useState(null)
   const [scan, setScan] = useState(false)
   const [busy, setBusy] = useState('')
+  const [result, setResult] = useState(null)   // último escaneo
 
   const load = async () => { try { setCards(await listCards()) } catch (e) { toast(e.message, 'error'); setCards([]) } }
   useEffect(() => { load() }, [])
@@ -23,17 +24,6 @@ export default function LoyaltyCards({ me }) {
     setBusy(key)
     try { await fn(); await load() } catch (e) { toast(e.message, 'error') } finally { setBusy('') }
   }
-  const day = (c) => run(c.id + 'd', async () => {
-    const r = await confirmDay(c.code, me.id)
-    if (r.closed) toast(`${r.name} completó sus ${r.plan_days} días. La tarjeta se cerró.`, 'success')
-    else if (r.gift) toast(`¡${r.name} completó los ${r.plan_days} días! Ganó 1 día de regalo 🎁`, 'success')
-    else toast(`Día ${r.day} de ${r.plan_days} confirmado para ${r.name}`, 'success')
-    setView(null)
-  })
-  const gift = (c) => {
-    if (!window.confirm(`¿Usar el día de regalo de ${c.full_name}? Después la tarjeta se elimina.`)) return
-    run(c.id + 'g', async () => { const r = await redeemGift(c.code, me.id); toast(`Día de regalo usado. La tarjeta de ${r.name} se cerró.`, 'success'); setView(null) })
-  }
   const remove = (c) => {
     if (!window.confirm(`¿Eliminar la tarjeta de ${c.full_name}? No se puede deshacer.`)) return
     run(c.id + 'x', async () => { await deleteCard(c.id); toast('Tarjeta eliminada', 'success'); setView(null) })
@@ -41,16 +31,38 @@ export default function LoyaltyCards({ me }) {
   const copy = async (c) => {
     try { await navigator.clipboard.writeText(cardLink(c.token)); toast('Link de la tarjeta copiado', 'success') } catch { window.prompt('Copia el link:', cardLink(c.token)) }
   }
-  const onScan = (text) => {
+  // El día solo se suma al escanear el QR de la tarjeta (las visitas no tienen que ser seguidas).
+  const onScan = async (text) => {
+    if (busy) return
     const code = parseCardCode(text)
-    const c = cards?.find((x) => x.code === code || x.token === code)
-    if (!c) return toast('Esa tarjeta no existe o ya terminó', 'error')
-    setScan(false); setView(c)
+    setBusy('scan')
+    try {
+      const fresh = await listCards()
+      setCards(fresh)
+      const c = fresh.find((x) => x.code === code || x.token === code)
+      if (!c) throw new Error('Esa tarjeta no existe o ya terminó')
+      if (c.gift_days > 0) {
+        if (!window.confirm(`${c.full_name} tiene 1 día gratis. ¿Usarlo hoy? Después la tarjeta se elimina.`)) return
+        await redeemGift(c.code, me.id)
+        setResult({ card: { ...c, gift_days: 0 }, msg: `Día gratis usado. La tarjeta de ${c.full_name} se cerró.`, closed: true })
+      } else {
+        const r = await confirmDay(c.code, me.id)
+        const card = { ...c, days_done: r.day, gift_days: r.gift, visits: [...(c.visits || []), { kind: 'dia', created_at: new Date().toISOString() }] }
+        setResult({
+          card, stamped: true, closed: r.closed,
+          msg: r.closed ? `${r.name} completó sus ${r.plan_days} días. La tarjeta se cerró.`
+            : r.gift ? `¡${r.name} completó los ${r.plan_days} días! Ganó 1 día gratis 🎁`
+              : `+1 estrella · día ${r.day} de ${r.plan_days} para ${r.name}`
+        })
+      }
+      toast('Tarjeta actualizada', 'success')
+      load()
+    } catch (e) { toast(e.message, 'error') } finally { setBusy('') }
   }
 
   if (!cards) return <Loading />
   const list = cards.filter((c) => !term || [c.full_name, c.phone, c.code].some((v) => v?.toLowerCase().includes(term.toLowerCase())))
-  const actions = (c) => ({ day: () => day(c), gift: () => gift(c), remove: () => remove(c), copy: () => copy(c), busy })
+  const actions = (c) => ({ remove: () => remove(c), copy: () => copy(c), busy })
 
   return (
     <>
@@ -73,7 +85,7 @@ export default function LoyaltyCards({ me }) {
 
       {!list.length ? <Empty>{cards.length ? 'Ninguna tarjeta coincide.' : 'No hay clientes temporales. Pulsa "Nueva tarjeta".'}</Empty> : (
         <div className="table-wrap"><table className="t">
-          <thead><tr><th>Cliente</th><th>Plan</th><th>Progreso</th><th>Último día</th><th>Código</th><th /></tr></thead>
+          <thead><tr><th>Cliente</th><th>Plan</th><th>Progreso</th><th>Última visita</th><th>Código</th><th /></tr></thead>
           <tbody>{list.map((c) => {
             const last = (c.visits || []).filter((v) => v.kind === 'dia').map((v) => v.created_at).sort().pop()
             return (
@@ -99,25 +111,32 @@ export default function LoyaltyCards({ me }) {
       {view && <Modal title={`Tarjeta · ${view.full_name}`} onClose={() => setView(null)}>
         <div className="col">
           <LoyaltyCard card={cards.find((c) => c.id === view.id) || view} />
-          <p className="tiny muted center" style={{ margin: 0 }}>Toca la tarjeta para ver el dorso con el QR. Envíale el link al cliente para que la tenga en su celular.</p>
+          <p className="tiny muted center" style={{ margin: 0 }}>Los días se suman solo escaneando el QR de la tarjeta en "Escanear tarjeta". Envíale el link al cliente para que la tenga en su celular.</p>
           <CardActions c={cards.find((c) => c.id === view.id) || view} {...actions(view)} big />
         </div>
       </Modal>}
-      {scan && <Modal title="Escanear tarjeta" onClose={() => setScan(false)}>
-        <QRScanner onScan={onScan} />
-        <ManualCode onSubmit={onScan} />
+      {scan && <Modal title="Escanear tarjeta" onClose={() => { setScan(false); setResult(null) }}>
+        {result ? (
+          <div className="col">
+            <LoyaltyCard card={result.card} justStamped={result.stamped} />
+            <div className={`badge ${result.closed ? 'warn' : 'ok'}`} style={{ justifyContent: 'center', padding: 10, fontSize: '.9rem' }}>{result.msg}</div>
+            <button className="btn primary" onClick={() => setResult(null)}><ScanLine size={16} /> Escanear otra tarjeta</button>
+          </div>
+        ) : (
+          <>
+            <QRScanner onScan={onScan} active={!busy} />
+            {busy === 'scan' && <p className="center"><Spinner /> Validando…</p>}
+            <p className="tiny muted center">Apunta la cámara al QR de la tarjeta del cliente (en su celular, al girar la tarjeta). Cada escaneo suma 1 estrella; máximo uno cada 12 horas.</p>
+          </>
+        )}
       </Modal>}
     </>
   )
 }
 
-function CardActions({ c, day, gift, remove, copy, onView, busy, big }) {
-  const b = (k) => busy === c.id + k
+function CardActions({ c, remove, copy, onView, busy, big }) {
   return (
     <div className="row wrap" style={{ gap: 6, justifyContent: big ? 'center' : 'flex-end' }}>
-      {c.gift_days > 0
-        ? <button className="btn sm primary" onClick={gift} disabled={!!busy}>{b('g') ? <Spinner size={14} /> : <Gift size={14} />} Usar día gratis</button>
-        : <button className="btn sm primary" onClick={day} disabled={!!busy}>{b('d') ? <Spinner size={14} /> : <CalendarPlus size={14} />} Confirmar día</button>}
       {onView && <button className="icon-btn" title="Ver tarjeta" onClick={onView}><Eye size={16} /></button>}
       <button className="icon-btn" title="Copiar link" onClick={copy}><Copy size={16} /></button>
       {c.phone && <a className="icon-btn" title="Enviar por WhatsApp" href={whatsappLink(c)} target="_blank" rel="noreferrer"><MessageCircle size={16} /></a>}
@@ -155,15 +174,5 @@ function NewCard({ f, setF, me, onClose, onSaved }) {
         <Input label="Valor pagado en COP (opcional)" type="number" min="0" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} />
       </div>
     </Modal>
-  )
-}
-
-function ManualCode({ onSubmit }) {
-  const [v, setV] = useState('')
-  return (
-    <form className="row mt" onSubmit={(e) => { e.preventDefault(); if (v.trim()) onSubmit(v) }}>
-      <input className="input grow" placeholder="O escribe el código (ej. 4F2A9C1B)" value={v} onChange={(e) => setV(e.target.value)} />
-      <button className="btn primary">Buscar</button>
-    </form>
   )
 }

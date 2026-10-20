@@ -52,10 +52,10 @@ export default function CardPage() {
               <p style={{ margin: 0 }}><Gift size={16} className="y" /> <b>¡Completaste tus {card.plan_days} días!</b> Tienes <b className="y">1 día gratis</b>. Muestra el QR en recepción para usarlo; después la tarjeta se cierra.</p>
             ) : (
               <p style={{ margin: 0 }}>Llevas <b className="y">{card.days_done}</b> de <b>{card.plan_days}</b> días. {card.plan_days === 14
-                ? <>Te faltan <b>{card.plan_days - card.days_done}</b> para ganar <b className="y">1 día gratis</b>.</>
-                : <>Te faltan <b>{card.plan_days - card.days_done}</b> para terminar tu plan.</>}</p>
+                ? <>Te faltan <b>{card.plan_days - card.days_done}</b> visitas para ganar <b className="y">1 día gratis</b>.</>
+                : <>Te faltan <b>{card.plan_days - card.days_done}</b> visitas para terminar tu plan.</>}</p>
             )}
-            <p className="tiny muted" style={{ margin: 0 }}>Muestra el QR (al girar la tarjeta) en recepción cada día que vengas. Guarda este link o agrégalo a tu pantalla de inicio.</p>
+            <p className="tiny muted" style={{ margin: 0 }}>Cada vez que vengas, muestra el QR (gira la tarjeta) en recepción: al escanearlo se suma 1 estrella. No tienen que ser días seguidos. Guarda este link o agrégalo a tu pantalla de inicio.</p>
           </div>
         </>
       )}
