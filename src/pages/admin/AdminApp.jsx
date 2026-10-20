@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, AreaChart, Area } from 'recharts'
-import { LayoutDashboard, Users, CreditCard, Tags, UserCog, Dumbbell, CalendarCheck, Plus, Search, RefreshCw, Pencil, Trash2, AlertTriangle, DollarSign, UserCheck, Clock, KeyRound, Power, Megaphone, CalendarClock, Images, Store as StoreIcon } from 'lucide-react'
+import { LayoutDashboard, Users, CreditCard, Tags, UserCog, Dumbbell, CalendarCheck, Plus, Search, RefreshCw, Pencil, Trash2, AlertTriangle, DollarSign, UserCheck, Clock, KeyRound, Power, Megaphone, CalendarClock, Images, Store as StoreIcon, Ticket } from 'lucide-react'
 import { supabase, q } from '../../lib/supabase'
 import { getSession, setSession, clearSession, setPassword } from '../../lib/auth'
 import { getPlans, getTrainingTypes } from '../../lib/data'
@@ -13,6 +13,7 @@ import MemberForm from './MemberForm'
 import Promotions from './Promotions'
 import Community from './Community'
 import StoreAdmin from './Store'
+import LoyaltyCards from './LoyaltyCards'
 import ClassesAdmin, { TodayClasses } from './Classes'
 import { ProofPicker, ProofLink, PendingProofs } from '../../components/Payments'
 
@@ -20,6 +21,7 @@ const NAV = [
   { id: 'dash', label: 'Dashboard', icon: LayoutDashboard, short: 'Inicio' },
   { id: 'members', label: 'Clientes', icon: Users },
   { id: 'memberships', label: 'Membresías', icon: CreditCard },
+  { id: 'cards', label: 'Tarjetas temporales', short: 'Tarjetas', icon: Ticket },
   { id: 'classes', label: 'Clases', icon: CalendarClock },
   { id: 'attendance', label: 'Asistencia', icon: CalendarCheck },
   { id: 'promos', label: 'Promociones push', short: 'Promos', icon: Megaphone },
@@ -55,6 +57,7 @@ export default function AdminApp() {
           {tab === 'dash' && <Dashboard data={data} reload={load} goTo={setTab} />}
           {tab === 'members' && <Members data={data} reload={load} />}
           {tab === 'memberships' && <Memberships data={data} reload={load} me={me} />}
+          {tab === 'cards' && <LoyaltyCards me={me} />}
           {tab === 'classes' && <ClassesAdmin types={data.types} />}
           {tab === 'attendance' && <Attendance />}
           {tab === 'promos' && <Promotions data={data} me={me} />}
