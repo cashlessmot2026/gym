@@ -36,7 +36,7 @@ export default function LoyaltyCard({ card, justStamped }) {
         <span className="lc-face lc-front">
           <span className="lc-sheen" />
           <span className="lc-row">
-            <span className="lc-biz">IRONYELLOW GYM</span>
+            <span className="lc-biz">MERCURY FITNESS CLUB</span>
             <span className="lc-chip" aria-hidden />
           </span>
           {ready ? (

@@ -75,6 +75,6 @@ export function watchCard(id, onChange) {
 export const whatsappLink = (card) => {
   const phone = String(card.phone || '').replace(/\D/g, '')
   const to = phone.length === 10 ? '57' + phone : phone
-  const text = `Hola ${card.full_name.split(' ')[0]} 👋 Esta es tu tarjeta de fidelidad de IronYellow Gym (plan ${card.plan_days} días). Guárdala y muéstrala en recepción cada día: ${cardLink(card.token)}`
+  const text = `Hola ${card.full_name.split(' ')[0]} 👋 Esta es tu tarjeta de fidelidad de Mercury Fitness Club (plan ${card.plan_days} días). Guárdala y muéstrala en recepción cada día: ${cardLink(card.token)}`
   return `https://wa.me/${to}?text=${encodeURIComponent(text)}`
 }

@@ -6,8 +6,8 @@ const resolve = (u) => /^https?:/i.test(u || '') ? u : new URL((u || '').replace
 
 self.addEventListener('push', (event) => {
   let data = {}
-  try { data = event.data ? event.data.json() : {} } catch { data = { title: 'IronYellow Gym', body: event.data?.text() } }
-  const title = data.title || 'IronYellow Gym'
+  try { data = event.data ? event.data.json() : {} } catch { data = { title: 'Mercury Fitness Club', body: event.data?.text() } }
+  const title = data.title || 'Mercury Fitness Club'
 
   event.waitUntil((async () => {
     const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
@@ -18,8 +18,8 @@ self.addEventListener('push', (event) => {
     }
     await self.registration.showNotification(title, {
       body: data.body || '',
-      icon: SCOPE + 'icon.svg',
-      badge: SCOPE + 'icon.svg',
+      icon: SCOPE + 'icon-192.png',
+      badge: SCOPE + 'icon-192.png',
       image: data.image || undefined,
       tag: data.id || undefined,
       renotify: true,

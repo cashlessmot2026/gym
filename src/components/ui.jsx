@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
-import { X, Dumbbell, LogOut, Loader2, Menu } from 'lucide-react'
+import { X, LogOut, Loader2, Menu } from 'lucide-react'
 
 // ---------- Toasts ----------
 const ToastCtx = createContext(() => {})
@@ -167,9 +167,9 @@ export function Markdown({ text }) {
 export function Brand({ sub }) {
   return (
     <div className="brand">
-      <div className="brand-logo"><Dumbbell size={22} /></div>
+      <img className="brand-img" src={`${import.meta.env.BASE_URL}logo.png`} alt="Mercury Fitness Club" />
       <div>
-        <div className="brand-name">IRON<span>YELLOW</span></div>
+        <div className="brand-name">MERCURY <span>FITNESS</span></div>
         {sub && <div className="tiny muted" style={{ letterSpacing: '.15em', fontWeight: 700 }}>{sub}</div>}
       </div>
     </div>
@@ -205,7 +205,7 @@ export function Shell({ sub, nav, value, onChange, user, onLogout, children }) {
       </aside>
 
       <header className="mobile-bar">
-        <div className="brand mini"><div className="brand-logo"><Dumbbell size={18} /></div><div className="brand-name">IRON<span>YELLOW</span></div></div>
+        <div className="brand mini"><img className="brand-img" src={`${import.meta.env.BASE_URL}logo.png`} alt="" /><div className="brand-name">MERCURY <span>FITNESS</span></div></div>
         {user && <button className="mobile-user" onClick={() => setSheet(true)} aria-label="Mi cuenta"><Avatar src={user.photo} name={user.full_name} /></button>}
       </header>
 

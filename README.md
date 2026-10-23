@@ -1,4 +1,4 @@
-# IronYellow Gym 🟨⬛
+# Mercury Fitness Club 🟨⬛
 
 Una sola app en React (Vite) para gestionar un gimnasio y hacer seguimiento de entrenamientos. Funciona como **PWA instalable y offline** y como **app nativa Android** (Capacitor). Usa Supabase como base de datos.
 

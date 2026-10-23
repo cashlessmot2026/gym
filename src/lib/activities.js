@@ -16,7 +16,7 @@ async function listWorkouts(memberId, limit) {
   return rows.map((s) => ({
     id: `ws-${s.id}`, source: 'rutina', sport: 'fuerza', title: 'Rutina de entrenamiento', started_at: s.started_at,
     duration_sec: s.total_sec || 0, distance_m: 0, calories: Number(s.calories) || 0, steps: 0,
-    avg_hr: s.avg_hr, max_hr: s.max_hr, hr_zones: s.hr_zones || null, hr_series: null, route: null, device: 'IronYellow'
+    avg_hr: s.avg_hr, max_hr: s.max_hr, hr_zones: s.hr_zones || null, hr_series: null, route: null, device: 'Mercury'
   }))
 }
 

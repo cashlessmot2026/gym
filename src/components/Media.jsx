@@ -209,7 +209,7 @@ export function QRImage({ value, size = 220, name, download = true }) {
     const g = c.getContext('2d')
     g.fillStyle = '#0a0a0a'; g.fillRect(0, 0, 600, 820)
     g.fillStyle = '#FFD60A'; g.fillRect(0, 0, 600, 110)
-    g.fillStyle = '#000'; g.font = 'bold 54px Bebas Neue, Arial'; g.textAlign = 'center'; g.fillText('IRONYELLOW GYM', 300, 75)
+    g.fillStyle = '#000'; g.font = 'bold 54px Bebas Neue, Arial'; g.textAlign = 'center'; g.fillText('MERCURY FITNESS CLUB', 300, 75)
     const img = new Image()
     img.onload = () => {
       g.fillStyle = '#fff'; g.fillRect(70, 150, 460, 460); g.drawImage(img, 80, 160, 440, 440)

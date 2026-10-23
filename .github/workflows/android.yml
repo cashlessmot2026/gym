@@ -56,19 +56,19 @@ jobs:
           ./gradlew assembleDebug --no-daemon
 
       - name: Rename APK
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk IronYellow-Gym.apk
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk MercuryFitnessClub.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: IronYellow-Gym-apk
-          path: IronYellow-Gym.apk
+          name: MercuryFitnessClub-apk
+          path: MercuryFitnessClub.apk
 
       - name: Publish release apk-latest
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete apk-latest -y --cleanup-tag || true
-          gh release create apk-latest IronYellow-Gym.apk \
-            --title "IronYellow Gym · APK Android (build ${{ github.run_number }})" \
+          gh release create apk-latest MercuryFitnessClub.apk \
+            --title "Mercury Fitness Club · APK Android (build ${{ github.run_number }})" \
             --notes "APK compilado automáticamente desde el commit ${{ github.sha }}. Descárgalo en el celular Android y ábrelo para instalar (permite 'Instalar apps de fuentes desconocidas')." \
             --latest

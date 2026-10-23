@@ -198,8 +198,8 @@ export default function Promotions({ data, me }) {
               <div className="tiny muted center" style={{ marginBottom: 14 }}>{new Date().toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })}</div>
               <div className="phone-notif">
                 <div className="row" style={{ padding: '10px 12px', gap: 8 }}>
-                  <img src={`${import.meta.env.BASE_URL}icon.svg`} width="20" height="20" alt="" style={{ borderRadius: 5 }} />
-                  <span className="tiny muted grow">IronYellow Gym · {C?.label}</span><span className="tiny muted">ahora</span>
+                  <img src={`${import.meta.env.BASE_URL}icon-192.png`} width="20" height="20" alt="" style={{ borderRadius: 10 }} />
+                  <span className="tiny muted grow">Mercury Fitness Club · {C?.label}</span><span className="tiny muted">ahora</span>
                 </div>
                 <div style={{ padding: '0 12px 12px' }}>
                   <div style={{ fontWeight: 700, fontSize: '.9rem' }}>{f.title || 'Título de la promoción'}</div>

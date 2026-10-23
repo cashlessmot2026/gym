@@ -10,10 +10,10 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icon.svg', 'models/*', 'tfjs-wasm/*'],
+      includeAssets: ['favicon.png', 'apple-touch-icon.png', 'logo.png', 'models/*', 'tfjs-wasm/*'],
       manifest: {
-        name: 'IronYellow Gym',
-        short_name: 'IronYellow',
+        name: 'Mercury Fitness Club',
+        short_name: 'Mercury',
         description: 'Gestión de gimnasio, entrenamientos y progreso',
         theme_color: '#070707',
         background_color: '#070707',
@@ -21,7 +21,9 @@ export default defineConfig({
         start_url: base,
         scope: base,
         icons: [
-          { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' }
+          { src: 'icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: 'icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
         ]
       },
       workbox: {

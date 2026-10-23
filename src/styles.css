@@ -89,6 +89,8 @@ textarea.input { resize: vertical; min-height: 80px; }
 .shell { display: grid; grid-template-columns: 250px 1fr; min-height: 100vh; }
 .side { background: #0b0b0b; border-right: 1px solid var(--line); padding: 20px 14px; position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; gap: 4px; }
 .brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 22px; }
+.brand-img { width: 44px; height: 44px; border-radius: 50%; object-fit: contain; flex: none; }
+.brand.mini .brand-img { width: 36px; height: 36px; }
 .brand-logo { width: 40px; height: 40px; border-radius: 12px; background: var(--y); color: #000; display: grid; place-items: center; }
 .brand-name { font-family: var(--display); font-size: 1.6rem; line-height: 1; letter-spacing: .05em; }
 .brand-name span { color: var(--y); }

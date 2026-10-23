@@ -105,7 +105,7 @@ function ClientMain({ me, status, types, tab, setTab, saveProfile, onLogout }) {
         ? <SocialProfile key={viewing} me={me} memberId={viewing} onBack={() => setViewing(null)} onOpenProfile={openProfile} onChallenge={challenge} bell={bell} />
         : <>
       {tab === 'feed' && <Feed me={me} onOpenProfile={openProfile} onGo={go} bell={bell} />}
-      {tab === 'store' && <><PageTitle a="TIENDA" b="IRONYELLOW">{bell}</PageTitle><Store /></>}
+      {tab === 'store' && <><PageTitle a="TIENDA" b="MERCURY">{bell}</PageTitle><Store /></>}
       {tab === 'ranking' && <Ranking me={me} onOpenProfile={openProfile} bell={bell} />}
       {tab === 'challenges' && <Challenges me={me} preset={rival} onClearPreset={() => setRival(null)} onOpenProfile={openProfile} bell={bell} />}
       {tab === 'me' && <SocialProfile key="me" me={me} memberId={me.id} onOpenProfile={openProfile} onChallenge={challenge} bell={bell} />}

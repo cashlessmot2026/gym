@@ -6,5 +6,6 @@ dev-dist
 .env.vapid.json
 IronYellow_Gym_Accesos.pdf
 IronYellow-Gym.apk
+MercuryFitnessClub.apk
 
 .secrets/

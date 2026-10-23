@@ -297,7 +297,7 @@ export async function enableMediaControls({ title, artist, onPause, onPlay, onNe
   if (!('mediaSession' in navigator)) return false
   if (!audio) { audio = new Audio(silentWav()); audio.loop = true; audio.volume = 0.01 }
   try { await audio.play() } catch { return false }
-  navigator.mediaSession.metadata = new MediaMetadata({ title, artist, album: 'IronYellow Gym' })
+  navigator.mediaSession.metadata = new MediaMetadata({ title, artist, album: 'Mercury Fitness Club' })
   navigator.mediaSession.playbackState = 'playing'
   const set = (a, fn) => { try { navigator.mediaSession.setActionHandler(a, fn) } catch { /* acción no soportada */ } }
   set('pause', () => { navigator.mediaSession.playbackState = 'paused'; onPause?.() })
@@ -309,7 +309,7 @@ export async function enableMediaControls({ title, artist, onPause, onPlay, onNe
 
 export function updateMediaTitle(title, artist) {
   if ('mediaSession' in navigator && navigator.mediaSession.metadata) {
-    navigator.mediaSession.metadata = new MediaMetadata({ title, artist, album: 'IronYellow Gym' })
+    navigator.mediaSession.metadata = new MediaMetadata({ title, artist, album: 'Mercury Fitness Club' })
   }
 }
 

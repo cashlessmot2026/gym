@@ -105,7 +105,7 @@ export async function enablePush(ownerOrMemberId) {
   if (kind === 'native') {
     const { LocalNotifications } = await import('@capacitor/local-notifications')
     const perm = await LocalNotifications.requestPermissions()
-    if (perm.display !== 'granted') { localStorage.setItem('iy_push_native', 'denied'); throw new Error('Permiso de notificaciones denegado. Actívalo en Ajustes > Apps > IronYellow Gym > Notificaciones.') }
+    if (perm.display !== 'granted') { localStorage.setItem('iy_push_native', 'denied'); throw new Error('Permiso de notificaciones denegado. Actívalo en Ajustes > Apps > Mercury Fitness Club > Notificaciones.') }
     await nativeChannels(LocalNotifications)
     // Android 12+: las alarmas exactas garantizan que la alerta suene justo 10 min antes
     try {

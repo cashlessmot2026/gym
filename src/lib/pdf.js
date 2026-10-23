@@ -17,7 +17,7 @@ export async function nutritionPdf({ title = 'Plan de nutrición', member = {}, 
     doc.setFillColor(...BLACK); doc.rect(0, 0, W, 70, 'F')
     doc.setFillColor(...YELLOW); doc.rect(0, 70, W, 4, 'F')
     doc.setTextColor(...YELLOW); doc.setFont('helvetica', 'bold'); doc.setFontSize(22)
-    doc.text('IRONYELLOW GYM', M, 40)
+    doc.text('MERCURY FITNESS CLUB', M, 40)
     doc.setFontSize(10); doc.setTextColor(255, 255, 255)
     doc.text(clean(title), M, 58)
     doc.text(new Date().toLocaleDateString('es'), W - M, 58, { align: 'right' })
@@ -84,7 +84,7 @@ export async function nutritionPdf({ title = 'Plan de nutrición', member = {}, 
   const pages = doc.getNumberOfPages()
   for (let p = 1; p <= pages; p++) {
     doc.setPage(p); doc.setFontSize(8); doc.setTextColor(140)
-    doc.text(`IronYellow Gym · Página ${p}/${pages} · Este plan es orientativo, no sustituye la consulta médica.`, W / 2, H - 20, { align: 'center' })
+    doc.text(`Mercury Fitness Club · Página ${p}/${pages} · Este plan es orientativo, no sustituye la consulta médica.`, W / 2, H - 20, { align: 'center' })
   }
   const name = `${title}_${member.full_name || 'cliente'}`.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w-]+/g, '_').replace(/^_+|_+$/g, '') + '.pdf'
   await deliverPdf(doc, name)
