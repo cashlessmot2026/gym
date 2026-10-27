@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Dumbbell, LineChart, Scale, Bot, Library, User, KeyRound, Pencil, CalendarClock, Home, Trophy, Swords, IdCard, ShoppingBag } from 'lucide-react'
+import { Dumbbell, LineChart, Scale, Bot, Library, User, KeyRound, Pencil, Home, Trophy, Swords, IdCard, ShoppingBag } from 'lucide-react'
 import { supabase, q } from '../../lib/supabase'
 import { getSession, setSession, clearSession, setPassword } from '../../lib/auth'
 import { getStatus, getTrainingTypes } from '../../lib/data'
@@ -14,9 +14,7 @@ import { QRImage, WatchPanel } from '../../components/Media'
 import { usePushInbox, PushBanner, NotificationBell, PushOptIn } from '../../components/Notifications'
 import { ClientTransfer, ProofLink } from '../../components/Payments'
 import Onboarding from './Onboarding'
-import Training from './Training'
-import Classes from './Classes'
-import { memberSchedules } from '../../lib/classes'
+import TrainingHub from './GymRoutines'
 import Feed from './Feed'
 import SocialProfile from './SocialProfile'
 import Ranking from './Ranking'
@@ -74,10 +72,6 @@ export default function ClientApp() {
 }
 
 function ClientMain({ me, status, types, tab, setTab, saveProfile, onLogout }) {
-  // Pestaña "Clases": aparece si eligió Box (u otra modalidad con clases) o si está en un grupo
-  const [hasClasses, setHasClasses] = useState(false)
-  useEffect(() => { memberSchedules(me).then((r) => setHasClasses(r.schedules.length > 0)).catch(() => {}) }, [me.id, (me.training_modes || []).join()])
-  const nav = hasClasses ? [...NAV.slice(0, 5), { id: 'classes', label: 'Clases', icon: CalendarClock }, ...NAV.slice(5)] : NAV
   // Perfil de otro miembro abierto desde el feed, el ranking o los retos
   const [viewing, setViewing] = useState(null)
   const [rival, setRival] = useState(null)
@@ -91,7 +85,7 @@ function ClientMain({ me, status, types, tab, setTab, saveProfile, onLogout }) {
     if (!url) return
     if (/^https?:/i.test(url) && !url.startsWith(location.origin)) { window.open(url, '_blank', 'noopener'); return }
     const t = new URL(url, location.origin).searchParams.get('tab')
-    if (t && (t === 'classes' || NAV.some((n) => n.id === t))) go(t)
+    if (t && NAV.some((n) => n.id === t)) go(t)
   }
   const inbox = usePushInbox(me, openUrl)
   useEffect(() => { openUrl(location.href) }, [])
@@ -99,7 +93,7 @@ function ClientMain({ me, status, types, tab, setTab, saveProfile, onLogout }) {
   const first = me.full_name.split(' ')[0]
   const bell = <NotificationBell inbox={inbox} onOpen={openUrl} />
   return (
-    <Shell sub="MI ENTRENAMIENTO" nav={nav} value={tab} onChange={go} user={me} onLogout={onLogout}>
+    <Shell sub="MI ENTRENAMIENTO" nav={NAV} value={tab} onChange={go} user={me} onLogout={onLogout}>
       <PushBanner n={inbox.banner} onClose={inbox.closeBanner} onOpen={openUrl} />
       {viewing
         ? <SocialProfile key={viewing} me={me} memberId={viewing} onBack={() => setViewing(null)} onOpenProfile={openProfile} onChallenge={challenge} bell={bell} />
@@ -109,8 +103,7 @@ function ClientMain({ me, status, types, tab, setTab, saveProfile, onLogout }) {
       {tab === 'ranking' && <Ranking me={me} onOpenProfile={openProfile} bell={bell} />}
       {tab === 'challenges' && <Challenges me={me} preset={rival} onClearPreset={() => setRival(null)} onOpenProfile={openProfile} bell={bell} />}
       {tab === 'me' && <SocialProfile key="me" me={me} memberId={me.id} onOpenProfile={openProfile} onChallenge={challenge} bell={bell} />}
-      {tab === 'train' && <><PageTitle a="HOLA," b={first.toUpperCase()}><WatchPanel compact />{bell}</PageTitle><div className="mb"><PushOptIn member={me} compact /></div><Training member={me} status={status} types={types} /></>}
-      {tab === 'classes' && <><PageTitle a="MIS" b="CLASES">{bell}</PageTitle><Classes member={me} /></>}
+      {tab === 'train' && <><PageTitle a="HOLA," b={first.toUpperCase()}><WatchPanel compact />{bell}</PageTitle><div className="mb"><PushOptIn member={me} compact /></div><TrainingHub member={me} status={status} types={types} /></>}
       {tab === 'progress' && <><PageTitle a="MI" b="PROGRESO">{bell}</PageTitle><MemberAnalytics memberId={me.id} /></>}
       {tab === 'body' && <><PageTitle a="MEDIDAS" b="E IMC">{bell}</PageTitle><BodyMetrics member={me} /></>}
       {tab === 'nutri' && <><PageTitle a="NUTRICIONISTA" b="IA">{bell}</PageTitle><NutritionAI member={me} /></>}

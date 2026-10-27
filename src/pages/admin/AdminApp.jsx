@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, AreaChart, Area } from 'recharts'
-import { LayoutDashboard, Users, CreditCard, Tags, UserCog, Dumbbell, CalendarCheck, Plus, Search, RefreshCw, Pencil, Trash2, AlertTriangle, DollarSign, UserCheck, Clock, KeyRound, Power, Megaphone, CalendarClock, Images, Store as StoreIcon, Ticket } from 'lucide-react'
+import { LayoutDashboard, Users, CreditCard, Tags, UserCog, Dumbbell, CalendarCheck, Plus, Search, RefreshCw, Pencil, Trash2, AlertTriangle, DollarSign, UserCheck, Clock, KeyRound, Power, Megaphone, ListChecks, UsersRound, BarChart3, ClipboardList, Images, Store as StoreIcon, Ticket } from 'lucide-react'
 import { supabase, q } from '../../lib/supabase'
 import { getSession, setSession, clearSession, setPassword } from '../../lib/auth'
 import { getPlans, getTrainingTypes } from '../../lib/data'
-import { addDays, today, fmtDate, fmtDateTime, money } from '../../lib/constants'
+import { addDays, today, fmtDate, fmtDateTime, money, fmtTime, WEEKDAYS } from '../../lib/constants'
+import { onWeekday, routineSeconds } from '../../lib/routines'
 import { WGER_CATEGORIES } from '../../lib/exerciseLibrary'
 import Login from '../../components/Login'
 import { Shell, PageTitle, Stat, Loading, Empty, Modal, Input, Select, Field, Avatar, StatusBadge, Spinner, useToast } from '../../components/ui'
@@ -14,7 +15,7 @@ import Promotions from './Promotions'
 import Community from './Community'
 import StoreAdmin from './Store'
 import LoyaltyCards from './LoyaltyCards'
-import ClassesAdmin, { TodayClasses } from './Classes'
+import { CoachWorkspace } from '../coach/CoachApp'
 import { ProofPicker, ProofLink, PendingProofs } from '../../components/Payments'
 
 const NAV = [
@@ -22,7 +23,11 @@ const NAV = [
   { id: 'members', label: 'Clientes', icon: Users },
   { id: 'memberships', label: 'Membresías', icon: CreditCard },
   { id: 'cards', label: 'Tarjetas temporales', short: 'Tarjetas', icon: Ticket },
-  { id: 'classes', label: 'Clases', icon: CalendarClock },
+  { id: 'routines', label: 'Rutinas', icon: ListChecks },
+  { id: 'exercises', label: 'Ejercicios', icon: Dumbbell },
+  { id: 'coaching', label: 'Planes por cliente', short: 'Planes', icon: ClipboardList },
+  { id: 'groups', label: 'Grupos', icon: UsersRound },
+  { id: 'training', label: 'Analítica de entrenamiento', short: 'Entrenos', icon: BarChart3 },
   { id: 'attendance', label: 'Asistencia', icon: CalendarCheck },
   { id: 'promos', label: 'Promociones push', short: 'Promos', icon: Megaphone },
   { id: 'community', label: 'Comunidad', icon: Images },
@@ -31,6 +36,9 @@ const NAV = [
   { id: 'staff', label: 'Coaches y personal', short: 'Personal', icon: UserCog },
   { id: 'types', label: 'Modalidades', icon: Dumbbell }
 ]
+
+// Pestañas del admin que reutilizan las secciones del coach (mismas funciones)
+const COACH_TABS = { routines: 'routines', exercises: 'exercises', coaching: 'clients', groups: 'groups', training: 'analytics' }
 
 export default function AdminApp() {
   const [me, setMe] = useState(() => getSession('admin'))
@@ -58,7 +66,7 @@ export default function AdminApp() {
           {tab === 'members' && <Members data={data} reload={load} />}
           {tab === 'memberships' && <Memberships data={data} reload={load} me={me} />}
           {tab === 'cards' && <LoyaltyCards me={me} />}
-          {tab === 'classes' && <ClassesAdmin types={data.types} />}
+          {COACH_TABS[tab] && <CoachWorkspace key={tab} me={me} tab={COACH_TABS[tab]} />}
           {tab === 'attendance' && <Attendance />}
           {tab === 'promos' && <Promotions data={data} me={me} />}
           {tab === 'community' && <Community />}
@@ -117,8 +125,8 @@ function Dashboard({ data, reload, goTo }) {
         </div>
       )}
       <div className="card mt">
-        <div className="row between"><h3 style={{ margin: 0 }}><CalendarClock size={16} className="y" /> Clases de hoy</h3><button className="btn sm" onClick={() => goTo('classes')}>Gestionar clases</button></div>
-        <div className="mt"><TodayClasses /></div>
+        <div className="row between"><h3 style={{ margin: 0 }}><ListChecks size={16} className="y" /> Rutinas de hoy · {WEEKDAYS[new Date().getDay()]}</h3><button className="btn sm" onClick={() => goTo('routines')}>Gestionar rutinas</button></div>
+        <div className="mt"><TodayRoutines /></div>
       </div>
       <div className="grid g2 mt">
         <div className="card"><h3>Ingresos por mes</h3>
@@ -142,6 +150,26 @@ function Dashboard({ data, reload, goTo }) {
       </div>
       {renew && <RenewModal m={renew} plans={data.plans} onClose={() => setRenew(null)} onSaved={() => { setRenew(null); reload() }} />}
     </>
+  )
+}
+
+function TodayRoutines() {
+  const [rows, setRows] = useState(null)
+  useEffect(() => {
+    Promise.all([
+      q(supabase.from('routines').select('id, name, items, weekdays, level').eq('published', true)),
+      q(supabase.from('workout_sessions').select('routine_id, ended_at').eq('date', today()).not('routine_id', 'is', null))
+    ]).then(([rs, ss]) => setRows(rs.filter((r) => onWeekday(r, new Date().getDay())).map((r) => ({
+      ...r, active: ss.filter((s) => s.routine_id === r.id && !s.ended_at).length, done: ss.filter((s) => s.routine_id === r.id && s.ended_at).length
+    })))).catch(() => setRows([]))
+  }, [])
+  if (!rows) return <Loading />
+  if (!rows.length) return <Empty>No hay rutinas publicadas para hoy.</Empty>
+  return (
+    <div className="table-wrap"><table className="t">
+      <thead><tr><th>Rutina</th><th>Ejercicios</th><th>Duración</th><th>Entrenando ahora</th><th>Terminadas hoy</th></tr></thead>
+      <tbody>{rows.map((r) => <tr key={r.id}><td><b>{r.name}</b>{r.level && <span className="tiny muted"> · {r.level}</span>}</td><td>{r.items.length}</td><td>~{fmtTime(routineSeconds(r.items))}</td><td>{r.active}</td><td>{r.done}</td></tr>)}</tbody>
+    </table></div>
   )
 }
 

@@ -36,7 +36,7 @@ export default function Training({ member, status, types }) {
 
   useEffect(() => {
     getMemberAssignments(member.id).then(setItems).catch((e) => { toast(e.message, 'error'); setItems([]) })
-    q(supabase.from('workout_sessions').select('*').eq('member_id', member.id).eq('date', today()).is('ended_at', null).order('created_at', { ascending: false }).limit(1))
+    q(supabase.from('workout_sessions').select('*').eq('member_id', member.id).eq('date', today()).is('ended_at', null).is('routine_id', null).order('created_at', { ascending: false }).limit(1))
       .then(async (s) => {
         if (s[0]) {
           setSession(s[0])
@@ -86,22 +86,11 @@ export default function Training({ member, status, types }) {
 
   const finishRoutine = async () => {
     if (!session || !logs.length) return toast('Aún no has completado ningún ejercicio', 'error')
-    const started = new Date(session.started_at).getTime()
-    const total = Math.round((Date.now() - started) / 1000)
-    const active = logs.reduce((s, l) => s + (l.set_times || []).reduce((a, x) => a + x.work, 0), 0)
-    const metOf = (name) => types.find((t) => t.name === items.find((i) => i.exercise?.name === name)?.exercise?.training_type)?.met || 5
-    const kcal = logs.reduce((s, l) => s + kcalFromMet(metOf(l.exercise_name), bodyKg, (l.set_times || []).reduce((a, x) => a + x.work + x.rest, 0)), 0)
-    // Pulsera en vivo: pulso medio/máx, minutos por zona y calorías por pulso (Keytel)
-    const hr = analyzeHr(watchState.hrSamples.filter((x) => x.t >= started), hrProfile(member, bodyKg)) || {}
-    const upd = {
-      ended_at: new Date().toISOString(), total_sec: total, active_sec: active, exercises_done: logs.filter((l) => l.completed).length,
-      sets_done: logs.reduce((s, l) => s + (l.sets_done || 0), 0), volume_kg: logs.reduce((s, l) => s + (l.weight || 0) * (l.reps_done || 0) * (l.sets_done || 0), 0),
-      calories: hr.kcal > 0 ? hr.kcal : kcal, avg_hr: hr.avg ?? null, max_hr: hr.max ?? null, hr_zones: hr.zones ?? null, hr_kcal: hr.kcal || null
-    }
-    await q(supabase.from('workout_sessions').update(upd).eq('id', session.id))
-    afterSync(member)
-    setSummary({ ...session, ...upd, logs })
-    setSession(null); setLogs([])
+    const metOf = (l) => types.find((t) => t.name === items.find((i) => i.exercise?.name === l.exercise_name)?.exercise?.training_type)?.met || 5
+    try {
+      setSummary(await closeSession({ session, logs, member, bodyKg, metOf }))
+      setSession(null); setLogs([])
+    } catch (e) { toast(e.message, 'error') }
   }
 
   if (!items) return <Loading />
@@ -172,7 +161,25 @@ export default function Training({ member, status, types }) {
   )
 }
 
-function DaySummary({ s, onClose }) {
+/** Cierra la sesión: duración, series, volumen y calorías (pulsera si está conectada, si no por MET). */
+export async function closeSession({ session, logs, member, bodyKg, metOf }) {
+  const started = new Date(session.started_at).getTime()
+  const total = Math.round((Date.now() - started) / 1000)
+  const active = logs.reduce((s, l) => s + (l.set_times || []).reduce((a, x) => a + x.work, 0), 0)
+  const kcal = logs.reduce((s, l) => s + kcalFromMet(metOf(l), bodyKg, (l.set_times || []).reduce((a, x) => a + x.work + x.rest, 0)), 0)
+  // Pulsera en vivo: pulso medio/máx, minutos por zona y calorías por pulso (Keytel)
+  const hr = analyzeHr(watchState.hrSamples.filter((x) => x.t >= started), hrProfile(member, bodyKg)) || {}
+  const upd = {
+    ended_at: new Date().toISOString(), total_sec: total, active_sec: active, exercises_done: logs.filter((l) => l.completed).length,
+    sets_done: logs.reduce((s, l) => s + (l.sets_done || 0), 0), volume_kg: logs.reduce((s, l) => s + (l.weight || 0) * (l.reps_done || 0) * (l.sets_done || 0), 0),
+    calories: hr.kcal > 0 ? hr.kcal : kcal, avg_hr: hr.avg ?? null, max_hr: hr.max ?? null, hr_zones: hr.zones ?? null, hr_kcal: hr.kcal || null
+  }
+  await q(supabase.from('workout_sessions').update(upd).eq('id', session.id))
+  afterSync(member)
+  return { ...session, ...upd, logs }
+}
+
+export function DaySummary({ s, onClose }) {
   const perEx = s.logs.map((l) => ({
     name: l.exercise_name.length > 14 ? l.exercise_name.slice(0, 13) + '…' : l.exercise_name,
     trabajo: (l.set_times || []).reduce((a, x) => a + x.work, 0),
@@ -181,7 +188,7 @@ function DaySummary({ s, onClose }) {
   const byMuscle = Object.entries(s.logs.reduce((m, l) => ({ ...m, [l.muscle_group]: (m[l.muscle_group] || 0) + (l.sets_done || 0) }), {})).map(([name, value]) => ({ name, value }))
   const density = s.total_sec ? Math.round((s.active_sec / s.total_sec) * 100) : 0
   return (
-    <Modal title="🏆 Resumen del día" onClose={onClose} wide>
+    <Modal title={s.routine_name ? `🏆 ${s.routine_name}` : '🏆 Resumen del día'} onClose={onClose} wide>
       <div className="grid g4">
         <Stat label="Duración total" value={fmtTime(s.total_sec)} icon={Clock} y />
         <Stat label="Tiempo activo" value={fmtTime(s.active_sec)} icon={Dumbbell} sub={`densidad ${density}%`} />

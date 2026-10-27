@@ -1,30 +1,40 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts'
-import { Users, ListChecks, UsersRound, Dumbbell, BarChart3, Search, Plus, Trash2, Pencil, Save, Globe, ArrowLeft, Activity, Clock, Flame, Trophy, Send, CalendarClock } from 'lucide-react'
+import { Users, ListChecks, UsersRound, Dumbbell, BarChart3, Search, Plus, Trash2, Pencil, Save, Globe, ArrowLeft, Activity, Clock, Flame, Trophy, Send, Eye, EyeOff, Copy, ChevronUp, ChevronDown } from 'lucide-react'
 import { supabase, q } from '../../lib/supabase'
 import { getSession, setSession, clearSession } from '../../lib/auth'
 import { getExercises, getTrainingTypes, assignRoutine } from '../../lib/data'
-import { GOALS, MUSCLE_GROUPS, fmtTime, fmtDate, calcAge, addDays, today } from '../../lib/constants'
+import { GOALS, MUSCLE_GROUPS, WEEKDAYS, WEEKDAYS_SHORT, fmtTime, fmtDate, calcAge, addDays, today } from '../../lib/constants'
+import { LEVELS, routineSeconds, onWeekday, saveRoutine } from '../../lib/routines'
 import Login from '../../components/Login'
 import { Shell, PageTitle, Loading, Empty, Modal, Input, Select, Field, Avatar, StatusBadge, Tabs, Stat, Spinner, useToast } from '../../components/ui'
 import { MemberAnalytics, tip } from '../../components/Analytics'
 import BodyMetrics from '../../components/BodyMetrics'
 import ExerciseBrowser from '../../components/ExerciseBrowser'
 import AssignmentEditor, { WeekdayPicker } from './AssignmentEditor'
-import CoachClasses, { CoachAlerts } from './CoachClasses'
 
-const NAV = [
-  { id: 'clients', label: 'Clientes', icon: Users },
-  { id: 'classes', label: 'Clases', icon: CalendarClock },
+// Secciones del coach; el admin las usa también (ver CoachWorkspace)
+export const COACH_NAV = [
   { id: 'routines', label: 'Rutinas', icon: ListChecks },
-  { id: 'groups', label: 'Grupos', icon: UsersRound },
   { id: 'exercises', label: 'Ejercicios', icon: Dumbbell },
+  { id: 'clients', label: 'Clientes', icon: Users },
+  { id: 'groups', label: 'Grupos', icon: UsersRound },
   { id: 'analytics', label: 'Analítica', icon: BarChart3 }
 ]
 
 export default function CoachApp() {
   const [me, setMe] = useState(() => getSession('coach'))
-  const [tab, setTab] = useState('clients')
+  const [tab, setTab] = useState('routines')
+  if (!me) return <Login scope="coach" onLogin={(u) => { setSession('coach', u); setMe(u) }} />
+  return (
+    <Shell sub="ZONA COACH" nav={COACH_NAV} value={tab} onChange={setTab} user={{ ...me, role: me.role === 'admin' ? 'Admin' : 'Coach' }} onLogout={() => { clearSession('coach'); setMe(null) }}>
+      <CoachWorkspace me={me} tab={tab} />
+    </Shell>
+  )
+}
+
+/** Contenido de las secciones del coach (rutinas, ejercicios, clientes, grupos, analítica) para el staff `me`. */
+export function CoachWorkspace({ me, tab }) {
   const [d, setD] = useState(null)
   const toast = useToast()
 
@@ -40,23 +50,17 @@ export default function CoachApp() {
       setD({ members: members.map((m) => ({ ...m, st: st[m.id] })), exercises, routines, groups, types })
     } catch (e) { toast(e.message, 'error') }
   }
-  useEffect(() => { if (me) load() }, [me?.id])
+  useEffect(() => { load() }, [me.id])
 
-  if (!me) return <Login scope="coach" onLogin={(u) => { setSession('coach', u); setMe(u) }} />
+  if (!d) return <Loading />
   return (
-    <Shell sub="ZONA COACH" nav={NAV} value={tab} onChange={setTab} user={{ ...me, role: me.role === 'admin' ? 'Admin' : 'Coach' }} onLogout={() => { clearSession('coach'); setMe(null) }}>
-      {!d ? <Loading /> : (
-        <>
-          {tab === 'clients' && <Clients d={d} me={me} />}
-          {tab === 'classes' && <CoachClasses me={me} />}
-          {tab !== 'classes' && <CoachAlerts me={me} />}
-          {tab === 'routines' && <Routines d={d} me={me} reload={load} />}
-          {tab === 'groups' && <Groups d={d} me={me} reload={load} />}
-          {tab === 'exercises' && <Exercises d={d} me={me} reload={load} />}
-          {tab === 'analytics' && <CoachAnalytics d={d} />}
-        </>
-      )}
-    </Shell>
+    <>
+      {tab === 'clients' && <Clients d={d} me={me} />}
+      {tab === 'routines' && <Routines d={d} me={me} reload={load} />}
+      {tab === 'groups' && <Groups d={d} me={me} reload={load} />}
+      {tab === 'exercises' && <Exercises d={d} me={me} reload={load} />}
+      {tab === 'analytics' && <CoachAnalytics d={d} />}
+    </>
   )
 }
 
@@ -122,25 +126,57 @@ function ClientProfile({ m, d, me, onBack }) {
 }
 
 // ---------------- Rutinas ----------------
+// Las rutinas publicadas aparecen a todos los clientes en "Entrenar" los días elegidos.
 function Routines({ d, me, reload }) {
   const toast = useToast()
   const [f, setF] = useState(null)
   const [assign, setAssign] = useState(null)
+  const [newEx, setNewEx] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [dayF, setDayF] = useState('all')
+  const [uses, setUses] = useState({})
   const exById = Object.fromEntries(d.exercises.map((e) => [e.id, e]))
 
-  const addItem = (id) => {
-    const e = exById[id]
-    if (e) setF((x) => ({ ...x, items: [...x.items, { exercise_id: id, sets: e.default_sets, reps: e.default_reps, work_sec: e.default_work_sec, rest_sec: e.default_rest_sec, weight: '' }] }))
+  // Veces que los clientes terminaron cada rutina (últimos 90 días)
+  useEffect(() => {
+    q(supabase.from('workout_sessions').select('routine_id, member_id').not('routine_id', 'is', null).not('ended_at', 'is', null).gte('date', addDays(today(), -90)))
+      .then((rows) => {
+        const u = {}
+        for (const r of rows) { const x = (u[r.routine_id] ??= { times: 0, people: new Set() }); x.times++; x.people.add(r.member_id) }
+        setUses(u)
+      }).catch(() => {})
+  }, [])
+
+  const blank = () => ({ name: '', description: '', training_type: d.types[0]?.name, level: '', weekdays: dayF === 'all' ? [] : [Number(dayF)], published: true, items: [] })
+  const addItem = (e) => {
+    if (e) setF((x) => ({ ...x, items: [...x.items, { exercise_id: e.id, sets: e.default_sets ?? 4, reps: e.default_reps ?? 12, work_sec: e.default_work_sec ?? 45, rest_sec: e.default_rest_sec ?? 60, weight: '', notes: '' }] }))
   }
-  const updItem = (i, k, v) => setF((x) => ({ ...x, items: x.items.map((it, j) => (j === i ? { ...it, [k]: v === '' ? '' : Number(v) } : it)) }))
+  const updItem = (i, k, v) => setF((x) => ({ ...x, items: x.items.map((it, j) => (j === i ? { ...it, [k]: k === 'notes' || v === '' ? v : Number(v) } : it)) }))
+  const move = (i, dir) => setF((x) => {
+    const items = [...x.items]; const j = i + dir
+    if (j < 0 || j >= items.length) return x
+    ;[items[i], items[j]] = [items[j], items[i]]; return { ...x, items }
+  })
   const save = async () => {
-    if (!f.name || !f.items.length) return toast('Ponle nombre y al menos un ejercicio', 'error')
-    const row = { name: f.name, description: f.description, training_type: f.training_type, items: f.items, coach_id: me.id }
-    if (f.id) await q(supabase.from('routines').update(row).eq('id', f.id)); else await q(supabase.from('routines').insert(row))
-    toast('Rutina guardada', 'success'); setF(null); reload()
+    setSaving(true)
+    try { await saveRoutine(f, me.id); toast(f.published === false ? 'Rutina guardada (oculta para los clientes)' : 'Rutina publicada para los clientes', 'success'); setF(null); reload() }
+    catch (e) { toast(e.message, 'error') }
+    setSaving(false)
   }
-  const del = async (id) => { if (window.confirm('¿Eliminar rutina?')) { await q(supabase.from('routines').delete().eq('id', id)); reload() } }
-  const total = (items) => items.reduce((s, it) => s + it.sets * ((Number(it.work_sec) || 0) + (Number(it.rest_sec) || 0)), 0)
+  const del = async (r) => {
+    if (!window.confirm(`¿Eliminar la rutina "${r.name}"? El progreso que ya guardaron los clientes se conserva.`)) return
+    try { await q(supabase.from('routines').delete().eq('id', r.id)); reload() } catch (e) { toast(e.message, 'error') }
+  }
+  const togglePub = async (r) => {
+    try { await q(supabase.from('routines').update({ published: r.published === false }).eq('id', r.id)); reload() } catch (e) { toast(e.message, 'error') }
+  }
+  const createEx = async () => {
+    if (!newEx.name?.trim()) return toast('Escribe el nombre del ejercicio', 'error')
+    try {
+      const e = (await q(supabase.from('exercises').insert({ name: newEx.name.trim(), muscle_group: newEx.muscle_group, training_type: f.training_type || null, created_by: me.id }).select()))[0]
+      addItem(e); setNewEx(null); reload()
+    } catch (err) { toast(err.message, 'error') }
+  }
 
   const doAssign = async () => {
     if (!assign.days.length || (!assign.members.length && !assign.groups.length)) return toast('Elige días y destinatarios', 'error')
@@ -149,45 +185,89 @@ function Routines({ d, me, reload }) {
     toast('Rutina asignada', 'success'); setAssign(null)
   }
 
+  const list = d.routines.filter((r) => dayF === 'all' || onWeekday(r, Number(dayF)))
+  const dayLabel = (r) => (r.weekdays?.length ? r.weekdays.map((w) => WEEKDAYS_SHORT[w]).join(' · ') : 'Todos los días')
+
   return (
     <>
-      <PageTitle a="RUTINAS" b="DE ENTRENAMIENTO"><button className="btn primary" onClick={() => setF({ name: '', training_type: d.types[0]?.name, items: [] })}><Plus size={16} /> Crear rutina</button></PageTitle>
-      {d.routines.length ? (
+      <PageTitle a="RUTINAS" b="DEL GYM"><button className="btn primary" onClick={() => setF(blank())}><Plus size={16} /> Crear rutina</button></PageTitle>
+      <p className="muted small" style={{ marginTop: -6 }}>Las rutinas publicadas las ven todos los clientes en <b>Entrenar</b> los días que elijas, y cada uno guarda su progreso.</p>
+      <div className="row wrap mb" style={{ gap: 6 }}>
+        <button className={`chip ${dayF === 'all' ? 'on' : ''}`} onClick={() => setDayF('all')}>Todas ({d.routines.length})</button>
+        {WEEKDAYS_SHORT.map((w, i) => <button key={w} className={`chip ${dayF === String(i) ? 'on' : ''}`} onClick={() => setDayF(String(i))}>{w} · {d.routines.filter((r) => onWeekday(r, i)).length}</button>)}
+      </div>
+      {list.length ? (
         <div className="grid auto">
-          {d.routines.map((r) => (
-            <div key={r.id} className="card">
-              <div className="row between"><div style={{ fontWeight: 800, fontSize: '1.05rem' }}>{r.name}</div><span className="badge">{r.training_type}</span></div>
-              <div className="tiny muted">{r.items.length} ejercicios · ~{fmtTime(total(r.items))}</div>
-              <ul className="small" style={{ paddingLeft: 18, margin: '10px 0' }}>{r.items.slice(0, 5).map((it, i) => <li key={i}>{exById[it.exercise_id]?.name} <span className="muted">{it.sets}×{it.reps}</span></li>)}</ul>
-              <div className="row" style={{ gap: 6 }}>
-                <button className="btn sm primary" onClick={() => setAssign({ r, days: [new Date().getDay()], members: [], groups: [] })}><Send size={14} /> Asignar</button>
-                <button className="btn sm" onClick={() => setF({ ...r })}><Pencil size={14} /></button>
-                <button className="btn sm danger" onClick={() => del(r.id)}><Trash2 size={14} /></button>
+          {list.map((r) => (
+            <div key={r.id} className="card" style={r.published === false ? { opacity: .6 } : undefined}>
+              <div className="row between" style={{ alignItems: 'flex-start' }}><div style={{ fontWeight: 800, fontSize: '1.05rem' }}>{r.name}</div>
+                {r.published === false ? <span className="badge warn">Oculta</span> : <span className="badge ok">Publicada</span>}</div>
+              <div className="row wrap mt" style={{ gap: 6, marginTop: 6 }}>
+                <span className="badge y">{dayLabel(r)}</span>
+                {r.training_type && <span className="badge">{r.training_type}</span>}
+                {r.level && <span className="badge" style={{ textTransform: 'capitalize' }}>{r.level}</span>}
+              </div>
+              <div className="tiny muted mt" style={{ marginTop: 6 }}>{r.items.length} ejercicios · ~{fmtTime(routineSeconds(r.items))}{uses[r.id] ? ` · hecha ${uses[r.id].times} veces por ${uses[r.id].people.size} clientes` : ''}</div>
+              <ul className="small" style={{ paddingLeft: 18, margin: '10px 0' }}>{r.items.slice(0, 5).map((it, i) => <li key={i}>{exById[it.exercise_id]?.name || 'Ejercicio eliminado'} <span className="muted">{it.sets}×{it.reps}{it.weight ? ` · ${it.weight} kg` : ''}</span></li>)}
+                {r.items.length > 5 && <li className="muted">+{r.items.length - 5} más</li>}</ul>
+              <div className="row wrap" style={{ gap: 6 }}>
+                <button className="btn sm primary" onClick={() => setF({ ...r, items: r.items.map((it) => ({ ...it, weight: it.weight ?? '', notes: it.notes ?? '' })) })}><Pencil size={14} /> Editar</button>
+                <button className="btn sm" title={r.published === false ? 'Publicar' : 'Ocultar'} onClick={() => togglePub(r)}>{r.published === false ? <Eye size={14} /> : <EyeOff size={14} />}</button>
+                <button className="btn sm" title="Duplicar" onClick={() => setF({ ...r, id: undefined, name: `${r.name} (copia)`, items: r.items.map((it) => ({ ...it, weight: it.weight ?? '', notes: it.notes ?? '' })) })}><Copy size={14} /></button>
+                <button className="btn sm" title="Asignar al plan de un cliente o grupo" onClick={() => setAssign({ r, days: [new Date().getDay()], members: [], groups: [] })}><Send size={14} /></button>
+                <button className="btn sm danger" title="Eliminar" onClick={() => del(r)}><Trash2 size={14} /></button>
               </div>
             </div>
           ))}
         </div>
-      ) : <Empty>Crea tu primera rutina: un grupo de ejercicios con series, repeticiones y tiempos.</Empty>}
+      ) : <Empty>{dayF === 'all' ? 'Crea tu primera rutina: ejercicios con series, repeticiones, peso y tiempos.' : `No hay rutinas para el ${WEEKDAYS[Number(dayF)]}.`}</Empty>}
 
       {f && (
-        <Modal title={f.id ? 'Editar rutina' : 'Nueva rutina'} onClose={() => setF(null)} wide footer={<button className="btn primary" onClick={save}><Save size={16} /> Guardar rutina</button>}>
-          <div className="grid g3">
-            <Input label="Nombre" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
-            <Select label="Modalidad" value={f.training_type} onChange={(e) => setF({ ...f, training_type: e.target.value })} options={d.types.map((t) => t.name)} />
-            <Input label="Descripción" value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} />
+        <Modal title={f.id ? 'Editar rutina' : 'Nueva rutina'} onClose={() => setF(null)} wide
+          footer={<button className="btn primary" onClick={save} disabled={saving}>{saving ? <Spinner size={16} /> : <Save size={16} />} Guardar rutina</button>}>
+          <div className="grid g2">
+            <Input label="Nombre" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Ej: Pierna y glúteo" />
+            <Input label="Descripción" value={f.description || ''} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="Objetivo, calentamiento…" />
+            <Select label="Modalidad" value={f.training_type || ''} onChange={(e) => setF({ ...f, training_type: e.target.value })} options={[{ value: '', label: '—' }, ...d.types.map((t) => t.name)]} />
+            <Select label="Nivel" value={f.level || ''} onChange={(e) => setF({ ...f, level: e.target.value })} options={LEVELS.map((l) => ({ value: l.id, label: l.label }))} />
           </div>
-          <div className="mt">
-            <Select label="Agregar ejercicio" value="" onChange={(e) => addItem(e.target.value)} options={[{ value: '', label: '+ Selecciona un ejercicio para agregar' }, ...d.exercises.map((e) => ({ value: e.id, label: `${e.muscle_group} · ${e.name}` }))]} />
+          <div className="grid g2 mt">
+            <Field label="Días en que se publica (sin días = todos los días)"><WeekdayPicker value={f.weekdays || []} onChange={(weekdays) => setF({ ...f, weekdays })} /></Field>
+            <Field label="Visibilidad">
+              <label className="row" style={{ cursor: 'pointer', gap: 8 }}><input type="checkbox" checked={f.published !== false} onChange={(e) => setF({ ...f, published: e.target.checked })} />
+                <span>{f.published !== false ? 'Publicada: la ven todos los clientes' : 'Oculta: solo la ve el staff'}</span></label>
+            </Field>
           </div>
-          <div className="table-wrap mt"><table className="t">
-            <thead><tr><th>#</th><th>Ejercicio</th><th>Series</th><th>Reps</th><th>Trabajo (s)</th><th>Descanso (s)</th><th>Kg</th><th /></tr></thead>
-            <tbody>{f.items.map((it, i) => (
-              <tr key={i}><td>{i + 1}</td><td><b>{exById[it.exercise_id]?.name}</b><div className="tiny muted">{exById[it.exercise_id]?.muscle_group}</div></td>
-                {['sets', 'reps', 'work_sec', 'rest_sec', 'weight'].map((k) => <td key={k}><input className="input" style={{ width: 80, padding: '6px 8px' }} type="number" value={it[k] ?? ''} onChange={(e) => updItem(i, k, e.target.value)} /></td>)}
-                <td><button className="icon-btn" onClick={() => setF({ ...f, items: f.items.filter((_, j) => j !== i) })}><Trash2 size={15} /></button></td></tr>
-            ))}</tbody>
-          </table></div>
-          <p className="muted small">Duración estimada: <b className="y">{fmtTime(total(f.items))}</b></p>
+          <div className="row wrap mt" style={{ gap: 8, alignItems: 'flex-end' }}>
+            <div className="grow" style={{ minWidth: 220 }}>
+              <Select label="Agregar ejercicio del banco" value="" onChange={(e) => addItem(exById[e.target.value])} options={[{ value: '', label: '+ Selecciona un ejercicio' }, ...d.exercises.map((e) => ({ value: e.id, label: `${e.muscle_group} · ${e.name}` }))]} />
+            </div>
+            <button type="button" className="btn" onClick={() => setNewEx({ name: '', muscle_group: MUSCLE_GROUPS[0] })}><Plus size={16} /> Ejercicio nuevo</button>
+          </div>
+          {newEx && (
+            <div className="card mt row wrap" style={{ gap: 8, alignItems: 'flex-end' }}>
+              <div className="grow" style={{ minWidth: 180 }}><Input label="Nombre del ejercicio" value={newEx.name} onChange={(e) => setNewEx({ ...newEx, name: e.target.value })} /></div>
+              <Select label="Grupo muscular" value={newEx.muscle_group} onChange={(e) => setNewEx({ ...newEx, muscle_group: e.target.value })} options={MUSCLE_GROUPS} />
+              <button type="button" className="btn primary" onClick={createEx}><Save size={16} /> Crear y agregar</button>
+              <button type="button" className="btn ghost" onClick={() => setNewEx(null)}>Cancelar</button>
+            </div>
+          )}
+          {f.items.length ? (
+            <div className="table-wrap mt"><table className="t">
+              <thead><tr><th>#</th><th>Ejercicio</th><th>Series</th><th>Reps</th><th>Trabajo (s)</th><th>Descanso (s)</th><th>Kg</th><th>Notas</th><th /></tr></thead>
+              <tbody>{f.items.map((it, i) => (
+                <tr key={i}><td>{i + 1}</td><td style={{ minWidth: 140 }}><b>{exById[it.exercise_id]?.name || 'Ejercicio eliminado'}</b><div className="tiny muted">{exById[it.exercise_id]?.muscle_group}</div></td>
+                  {['sets', 'reps', 'work_sec', 'rest_sec', 'weight'].map((k) => <td key={k}><input className="input" style={{ width: 72, padding: '6px 8px' }} type="number" min="0" step={k === 'weight' ? '0.5' : '1'} value={it[k] ?? ''} onChange={(e) => updItem(i, k, e.target.value)} /></td>)}
+                  <td><input className="input" style={{ width: 150, padding: '6px 8px' }} value={it.notes || ''} placeholder="Técnica, tempo…" onChange={(e) => updItem(i, 'notes', e.target.value)} /></td>
+                  <td><div className="row" style={{ gap: 2 }}>
+                    <button type="button" className="icon-btn" title="Subir" onClick={() => move(i, -1)} disabled={i === 0}><ChevronUp size={15} /></button>
+                    <button type="button" className="icon-btn" title="Bajar" onClick={() => move(i, 1)} disabled={i === f.items.length - 1}><ChevronDown size={15} /></button>
+                    <button type="button" className="icon-btn" title="Quitar" onClick={() => setF({ ...f, items: f.items.filter((_, j) => j !== i) })}><Trash2 size={15} /></button>
+                  </div></td></tr>
+              ))}</tbody>
+            </table></div>
+          ) : <Empty>Agrega ejercicios del banco o crea uno nuevo.</Empty>}
+          <p className="muted small">Duración estimada: <b className="y">{fmtTime(routineSeconds(f.items))}</b> · {f.items.reduce((s, it) => s + (Number(it.sets) || 0), 0)} series</p>
         </Modal>
       )}
       {assign && (
