@@ -44,6 +44,7 @@ Cómo funciona:
 
 ### 2c. Rutinas, pagos y nutricionista gratis
 1. Ejecuta en orden `supabase/03_pagos_cop.sql`, `supabase/04_clases.sql` (tablas históricas) y `supabase/09_rutinas.sql`. El gym no maneja clases: el admin o el coach publican **rutinas por día** (ejercicios, series, repeticiones, peso, tiempos) y todos los clientes las ven en *Entrenar → Rutinas del gym*, las empiezan y su progreso queda guardado.
+2. **Recordatorio de rutina:** ejecuta `supabase/10_recordatorios.sql` y despliega `supabase functions deploy routine-reminders --no-verify-jwt`. Cada inicio de sesión del cliente queda en `member_logins`; cada día, a la hora del último, recibe un push "Es hora de tu rutina" si aún no ha entrado ni entrenado (se desactiva en *Mi cuenta*).
 2. Despliega las funciones:
    ```bash
    supabase functions deploy send-push class-reminders nutri-ai --no-verify-jwt

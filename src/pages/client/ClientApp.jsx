@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Dumbbell, LineChart, Scale, Bot, Library, User, KeyRound, Pencil, Home, Trophy, Swords, IdCard, ShoppingBag } from 'lucide-react'
+import { Dumbbell, LineChart, Scale, Bot, Library, User, KeyRound, Pencil, Home, BellRing, Trophy, Swords, IdCard, ShoppingBag } from 'lucide-react'
 import { supabase, q } from '../../lib/supabase'
 import { getSession, setSession, clearSession, setPassword } from '../../lib/auth'
 import { getStatus, getTrainingTypes } from '../../lib/data'
@@ -15,6 +15,7 @@ import { usePushInbox, PushBanner, NotificationBell, PushOptIn } from '../../com
 import { ClientTransfer, ProofLink } from '../../components/Payments'
 import Onboarding from './Onboarding'
 import TrainingHub from './GymRoutines'
+import { trackLogin } from '../../lib/routines'
 import Feed from './Feed'
 import SocialProfile from './SocialProfile'
 import Ranking from './Ranking'
@@ -53,11 +54,12 @@ export default function ClientApp() {
 
   useEffect(() => {
     if (!me) return
+    trackLogin(me.id)
     getTrainingTypes().then(setTypes)
     refresh().catch((e) => toast(e.message, 'error'))
   }, [me?.id])
 
-  if (!me) return <Login scope="member" onLogin={(u) => { setSession('member', u); setMe(u) }} />
+  if (!me) return <Login scope="member" onLogin={(u) => { trackLogin(u.id, 'login'); setSession('member', u); setMe(u) }} />
   if (!types) return <div className="main"><Loading /></div>
 
   const saveProfile = async (patch) => {
@@ -114,6 +116,24 @@ function ClientMain({ me, status, types, tab, setTab, saveProfile, onLogout }) {
   )
 }
 
+/** Recordatorio push diario a la hora del último inicio de sesión. */
+function RoutineReminder({ me, onSave }) {
+  const on = me.routine_reminders !== false
+  const hour = me.last_login_at ? new Date(me.last_login_at).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }) : null
+  return (
+    <div className="card">
+      <h3><BellRing size={16} className="y" /> Recordatorio de rutina</h3>
+      <label className="row" style={{ cursor: 'pointer', gap: 8 }}>
+        <input type="checkbox" checked={on} onChange={(e) => onSave({ routine_reminders: e.target.checked })} />
+        <span className="small">{on ? 'Activado' : 'Desactivado'}</span>
+      </label>
+      <p className="tiny muted" style={{ marginBottom: 0 }}>
+        Te enviamos una notificación cada día a la hora de tu último inicio de sesión{hour ? <> (<b className="y">{hour}</b>)</> : ''}, si ese día aún no has entrado ni entrenado.
+      </p>
+    </div>
+  )
+}
+
 function Profile({ me, status, types, onSave, bell }) {
   const toast = useToast()
   const [hist, setHist] = useState([])
@@ -148,7 +168,7 @@ function Profile({ me, status, types, onSave, bell }) {
           <QRImage value={me.qr_code} name={me.full_name} size={180} />
           <p className="tiny muted center">Muestra este QR en recepción o usa tu tag NFC {me.nfc_uid ? '(asignado ✅)' : '(sin asignar)'}.</p>
         </div>
-        <div className="col"><WatchPanel /><PushOptIn member={me} /></div>
+        <div className="col"><WatchPanel /><PushOptIn member={me} /><RoutineReminder me={me} onSave={onSave} /></div>
       </div>
       <div className="card mt">
         <h3>Historial de membresías</h3>

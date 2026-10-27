@@ -60,3 +60,17 @@ export async function saveRoutine(f, staffId) {
     ? q(supabase.from('routines').update(row).eq('id', f.id))
     : q(supabase.from('routines').insert({ ...row, coach_id: staffId }))
 }
+
+/**
+ * Registra el inicio de sesión del cliente (login o abrir la app). Su hora es la del
+ * recordatorio push diario de rutina. Al abrir la app se registra como máximo cada 30 min.
+ */
+export function trackLogin(memberId, source = 'app') {
+  const k = 'iy_login_track'
+  try {
+    const last = JSON.parse(localStorage.getItem(k) || 'null')
+    if (source === 'app' && last?.id === memberId && Date.now() - last.t < 30 * 60000) return
+    localStorage.setItem(k, JSON.stringify({ id: memberId, t: Date.now() }))
+  } catch { /* sin almacenamiento: se registra igual */ }
+  return q(supabase.from('member_logins').insert({ member_id: memberId, source })).catch((e) => console.warn('[login]', e.message))
+}
